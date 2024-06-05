@@ -1,0 +1,42 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyChainedComparisonsInspection" enabled="true" level="WEAK WARNING" enabled_by_default="true">
+      <option name="ignoreConstantInTheMiddle" value="true" />
+    </inspection_tool>
+    <inspection_tool class="PyPep8NamingInspection" enabled="true" level="WEAK WARNING" enabled_by_default="true">
+      <option name="ignoredErrors">
+        <list>
+          <option value="N801" />
+          <option value="N806" />
+          <option value="N803" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyUnresolvedReferencesInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredIdentifiers">
+        <list>
+          <option value="SAT_EXTRACT.sat_extract_POLYMER.syke_csv" />
+          <option value="SAT_EXTRACT.sat_extract_POLYMER.skie_csv" />
+          <option value="SAT_EXTRACT.sat_extract_POLYMER.insitu" />
+          <option value="MDB_builder.MDB_builder.base" />
+          <option value="MDB_reader.MDBInSituFile.balticmlp" />
+          <option value="SAT_EXTRACT.sat_extract_CMEMS.insitu" />
+          <option value="MDB_reader.MDB_reader.base" />
+          <option value="SAT_EXTRACT.sat_extract_CMEMS.product_info" />
+          <option value="reformattoCMEMS_202207" />
+          <option value="product_info" />
+          <option value="reformattoCMEMS_202207_class" />
+          <option value="reformatCMEMS_202207_class" />
+          <option value="SAT_EXTRACT.sat_extract_OLCI.skie_csv" />
+          <option value="polymer_lois.polymer" />
+          <option value="SAT_EXTRACT.sat_extract_OLCI.eumdac_lois" />
+          <option value="MDB_builder.MDB_builder_AERONET.base" />
+          <option value="SAT_EXTRACT.sat_extract_IDEPIX.skie_csv" />
+          <option value="INSITU_comparison.make_insitu_comparison.base" />
+          <option value="INSITU_comparison.INSITUCOMPARISON" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>

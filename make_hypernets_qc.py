@@ -46,7 +46,10 @@ def make_report_files(input_path, output_path, site, start_date, end_date):
     if args.ndays_interval:
         interval = 24 * int(args.ndays_interval)
 
-    config_file_summary = os.path.join(output_path, 'ConfigPlotSummary.ini')
+    config_file_summary = os.path.join(output_path,site,'ConfigPlotSummary.ini')
+    if not os.path.exists(config_file_summary):
+        config_file_summary = os.path.join(output_path, 'ConfigPlotSummary.ini')
+
     print('[INFO] Config file summary: ', config_file_summary)
 
     while work_date <= end_date:
@@ -68,7 +71,7 @@ def make_report_files(input_path, output_path, site, start_date, end_date):
             continue
         hdayfile.set_path_images_date(site, work_date)
 
-        # file_summary = None
+        file_summary = None
         if os.path.exists(config_file_summary):
             dir_img_summary = os.path.join(os.path.dirname(hdayfile.file_nc), 'SUMMARY')
             file_summary = os.path.join(os.path.dirname(hdayfile.file_nc),
@@ -84,7 +87,8 @@ def make_report_files(input_path, output_path, site, start_date, end_date):
             delete = False if args.nodelfiles else True
             hdayfile.save_report_image(site, delete, args.overwrite)
 
-        create_daily_pdf_report(input_path, output_path, site, work_date, file_summary, hdayfile.sequences)
+        if file_summary is not None:
+            create_daily_pdf_report(input_path, output_path, site, work_date, file_summary, hdayfile.sequences)
 
         work_date = work_date + timedelta(hours=interval)
 
@@ -260,18 +264,13 @@ def plot_from_options(input_path, config_file, output_path_images):
         if os.path.exists(output_path_images):
             poptions.global_options['output_path'] = output_path_images
 
-    fbuilder = FlagBuilder(input_path, None, options)
+    fbuilder = FlagBuilder(input_path, options)
     hfile.flag_builder = fbuilder
 
-    # print('************************************************************************')
-    # print(virtual_flags_options)
-    # for virtual_flag in virtual_flags_options:
-    #     array, flag_names, flag_values = fbuilder.create_flag_array_ranges_v2(virtual_flags_options[virtual_flag])
-    #     print(array.shape)
 
     list_figures = poptions.get_list_figures()
 
-    # print(list_figures)
+
     for figure in list_figures:
         print('------------------------------------------------------------------------------------------')
         print(f'[INFO] Starting figure: {figure}')
@@ -557,7 +556,7 @@ def make_sun_plots(input_path, output_path, site, start_date, end_date, ndw):
 
         dir_out = hday.get_output_folder_date(site, work_date)
 
-        file_out = os.path.join(dir_out, f'SunImages_{work_date.strftime("%Y%m%d")}.png')
+        file_out = os.path.join(dir_out, f'{site}_SunImages_{work_date.strftime("%Y%m%d")}.png')
         hday.save_sun_images(file_out, sun_images_list, sun_images_time_list)
         work_date = work_date + timedelta(hours=interval)
 
@@ -610,7 +609,7 @@ def prepare_sun_plot_email(input_path, output_path, site, start_date):
     lines.append(f'End date for checking: {start_date.strftime("%Y-%m-%d")}')
     path_sun = os.path.join(output_path, site, start_date.strftime('%Y'), start_date.strftime('%m'),
                             start_date.strftime('%d'))
-    path_file = os.path.join(path_sun, f'SunImages_{start_date.strftime("%Y%m%d")}.png')
+    path_file = os.path.join(path_sun, f'{site}_SunImages_{start_date.strftime("%Y%m%d")}.png')
     if os.path.exists(path_file):
         lines.append(f'Image file path: {path_file}')
     else:
@@ -668,7 +667,7 @@ def make_single_sun(site, sequence, output_path):
     if not os.path.exists(file_sun):
         print(f'[ERROR] {file_sun} could not be downloaded')
         return
-    file_out = os.path.join(output_path, f'SunImage_{sequence}.jpg')
+    file_out = os.path.join(output_path, f'{site}_SunImage_{sequence}.jpg')
 
     image = Image.open(file_sun)
     rimage = image.rotate(270, expand=True)

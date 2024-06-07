@@ -418,6 +418,16 @@ class HYPERNETS_DAY_FILE:
         suffix = var.suffix
         seq_here = self.sequences[self.isequence]
 
+        #check if exist seq folder (RBINS)
+        time_seq_here = dt.strptime(seq_here,'%Y%m%dT%H%M')
+        path_images_here = self.path_images_date
+        for name in os.listdir(self.path_images_date):
+            if name.startswith('SEQ') and os.path.isdir(os.path.join(self.path_images_date,name,'image')):
+                time_seq_folder = dt.strptime(name[3:],'%Y%m%dT%H%M%S')
+                if abs(time_seq_folder-time_seq_here).total_seconds()<150.0:
+                    path_images_here = os.path.join(self.path_images_date,name,'image')
+
+
         val = var[self.isequence]
         file_img = None
         if not np.ma.is_masked(val):
@@ -425,7 +435,7 @@ class HYPERNETS_DAY_FILE:
             time_str = time.strftime('%Y%m%dT%H%M')
             name_file_img = f'{prefix}_{seq_here}_{time_str}_{suffix}'
             if self.path_images_date is not None:
-                file_img = os.path.join(self.path_images_date, name_file_img)
+                file_img = os.path.join(path_images_here, name_file_img)
                 if not os.path.exists(file_img):
                     file_img = None
 
@@ -483,8 +493,7 @@ class HYPERNETS_DAY_FILE:
                 title = f'{seq} (paa={paa:.1f})'
                 water_images[seq]['title'] = title
         dataset.close()
-        # for tal in water_images:
-        #     print(tal, '->', water_images[tal]['file_img'], '->', water_images[tal]['title'])
+
         return water_images
 
     def plot_water_images(self, wimages):
@@ -521,7 +530,7 @@ class HYPERNETS_DAY_FILE:
             if index_col == ncol:
                 index_col = 0
                 index_row = index_row + 1
-            # print(f'{flag}->{index_row} {index_col}')
+
             if multiple_plot:
                 if file_img is not None:
                     # pm.plot_image_title(file_img,index_row,index_col,title)
@@ -593,7 +602,6 @@ class HYPERNETS_DAY_FILE:
                                 f'{site}_{date_here.strftime("%Y%m%d")}_DailySummary{self.format_img}')
         print(f'[INFO] Output file: {file_out}')
 
-        # self.plot_from_options_impl(options_figure)
 
         ##TIME SERIES
         # start_multiple_plot_advanced(self, nrow, ncol, xfigsize, yfigsize, wspace, hspace, frameon)
@@ -683,6 +691,7 @@ class HYPERNETS_DAY_FILE:
         file_out = os.path.join(os.path.dirname(self.file_nc),
                                 f'{site}_{self.sequences[self.isequence]}_Report{self.format_img}')
         if os.path.exists(file_out) and not overwrite:
+            print(f'[WARNING] File {file_out} already exists. Skipping...')
             return
         dir_img = os.path.join(os.path.dirname(self.file_nc), 'IMG')
         if not os.path.exists(dir_img):
@@ -814,7 +823,7 @@ class HYPERNETS_DAY_FILE:
         l1_variable = f'l1_{flag}'
         l2_variable = f'l2_{flag}'
         dataset = Dataset(self.file_nc)
-        # print(flag)
+
         spectra = np.array(dataset.variables[l1_variable][self.isequence, :, :]).transpose()
         spectra_l2 = None
         if l2_variable in dataset.variables:
@@ -1140,22 +1149,6 @@ class HYPERNETS_DAY_FILE:
 
         plt.close()
 
-        # # print(x)
-        # # print(ydata)
-        # plt.figure()
-        # yarray_data = yarray.copy()
-        # yarray_data[yarray>0]=1
-        # plt.barh(xarray, yarray_data)
-        # plt.yticks(xvalues,xticks)
-        # #plt.grid(visible=True, which='major', color='gray', linestyle='--')
-        # #plt.xlabel(xlabel, fontsize=12)
-        # plt.gcf().tight_layout()
-        # file_out = options_figure['file_out']
-        # if file_out is not None:
-        #     plt.savefig(file_out, dpi=300)
-        # plt.close()
-
-        # time_array = np.ma.filled(time_array.astype(np.float), -999.0)
         dataset.close()
 
     def plot_angle_plot_from_options(self, options_figure):
@@ -1357,7 +1350,7 @@ class HYPERNETS_DAY_FILE:
             print(f'[ERROR] time_var and avg_var should be defined in the configuration file')
             return
         if time_var not in dataset.variables:
-            print(f'[ERROR] {time_var} is not defined in {self.mrfile.file_path}')
+            print(f'[ERROR] {time_var} is not defined in {self.file_nc}')
             return
         else:
             nseries = dataset.variables[time_var].shape[0]
@@ -1365,7 +1358,7 @@ class HYPERNETS_DAY_FILE:
         is_spectral = []
         for avg_var in avg_vars:
             if avg_var not in dataset.variables:
-                print(f'[ERROR] {avg_var} is not defined in {self.mrfile.file_path}')
+                print(f'[ERROR] {avg_var} is not defined in {self.file_nc}')
                 return
             else:
                 sh = dataset.variables[avg_var].shape
@@ -1428,7 +1421,6 @@ class HYPERNETS_DAY_FILE:
                 xticks = [xticks[index] for index in indices_new]
 
         ##PLOTTING
-
         pspectra = PlotSpectra()
         pspectra.xdata = xarray
 
@@ -1521,7 +1513,7 @@ class HYPERNETS_DAY_FILE:
         nvalid = np.count_nonzero(valid_time)
         if nvalid == 0:
             return None, None
-        print(dt.utcfromtimestamp(time_min), dt.utcfromtimestamp(time_max))
+
         xdata = np.array([output_value] * nvalid).astype(np.float64)
         ydata = var_array[valid_time]
 
@@ -1584,6 +1576,7 @@ class HYPERNETS_DAY_FILE:
         elif ndim == 2:
             spectra = np.array(dataset.variables[y_variable][:, :])
             nseries = spectra.shape[0]
+
         ##Checking spectra with fill values
         spectra_check = np.where(spectra == fill_value, 1, 0)
         spectra_check = np.sum(spectra_check, axis=1)
@@ -1610,28 +1603,6 @@ class HYPERNETS_DAY_FILE:
         str_legend_valid = []
         if ngroup > 1:
             groupArray = groupArray[spectra_check == 0]
-        # ngroup = 1
-        # groupValues = None
-        # groupArray = None
-        # if 'groupValues' in options_figure.keys():
-        #     groupValues = options_figure['groupValues']
-        # if groupValues is not None:
-        #     ngroup = len(groupValues)
-        # str_legend = []
-        #
-        # if ngroup > 1 and options_figure['legend']:
-        #     str_legend = self.get_str_legend(options_figure)
-        #
-        # if ngroup > 1:
-        #     groupArray, all_flag_values, all_flag_meanings = self.get_gs_array(options_figure,
-        #                                                                        options_figure['groupBy'],
-        #                                                                        options_figure['groupType'])
-        #
-        #     if ndim == 3:
-        #         if len(groupArray.shape) == 1 and groupArray.shape[0] == nseries:
-        #             groupArray = self.multiply_array_by_scan(groupArray, nseries, nscan)
-        #         if len(groupArray.shape) == 2 and groupArray.shape[0] == nseries and groupArray.shape[1] == nscan:
-        #             groupArray = self.reduce_l1_dimensions(groupArray)
 
         ##PLOTTING
         pspectra = PlotSpectra()

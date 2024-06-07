@@ -207,6 +207,7 @@ class FlagBuilder:
 
         return options_dict
 
+
     def assign_options(self, options_dict, key, value):
         keys = key.split('.')
         if len(keys) == 1:
@@ -228,7 +229,54 @@ class FlagBuilder:
             if value not in poptions[opt]['list_values']:
                 value = None
 
+        if poptions[opt]['type_param'] == 'strlist':
+            # use_pow2_vflags = poptions[opt]['user_pow2_vflags']
+            value = self.get_strlist_as_dict(value, opt, idx, use_pow2_flags)
+
         return value
+
+    def get_strlist_as_dict(self, values, opt, idx, use_pow2_flags):
+        if opt == 'flag_spatial_index':
+            return self.get_dict_flag_spatial_index(values, idx, use_pow2_flags)
+        if opt.startswith('flag_ranges_index'):
+            return self.get_dict_flag_ranges_index(values, idx, use_pow2_flags)
+        return values
+
+    def get_dict_flag_ranges_index(self, values, idx, use_pow2_flags):
+        value_dict = {}
+        if use_pow2_flags:
+            fvalue = int(math.pow(2, idx))
+        else:
+            fvalue = int(idx + 1)
+        if len(values) == 3:
+            value_dict = {
+                'flag_var': values[0],
+                'is_default': True,
+                'flag_name': values[1],
+                'flag_value': fvalue,
+                'flag_condition': 'and'
+            }
+        if len(values) >= 4:
+            try:
+                minV = float(values[2])
+            except:
+                minV = None
+            try:
+                maxV = float(values[3])
+            except:
+                maxV = None
+            value_dict = {
+                'is_default': False,
+                'flag_var': values[0],
+                'flag_name': values[1],
+                'flag_value': fvalue,
+                'min_range': minV,
+                'max_range': maxV,
+                'flag_condition': 'and'
+            }
+            if len(values) == 5:
+                value_dict['flag_condition'] = values[4]
+        return value_dict
 
     def get_value(self, section, key):
         value = None

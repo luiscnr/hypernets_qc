@@ -1,5 +1,5 @@
 import os.path
-import MDBPlotDefaults as defaults
+import plot_defaults as defaults
 
 
 class PlotOptions:
@@ -83,16 +83,6 @@ class PlotOptions:
             file_out_default = None
         options_out['file_out'] = self.get_value_param(section, 'file_out', file_out_default, 'str', None)
 
-        # options_out['multiple_plot'] = self.get_value_param(section, 'multiple_plot', None, 'str')
-        # if options_out['type'] == 'csvtable':
-        #     options_out = self.get_options_csv(section,options_out)
-        # if options_out['type'] == 'scatterplot':
-        #     print(f'[INFO] Plot type: scatterplot')
-        #     options_out = self.get_options_scatterplot(section, options_out)
-        #
-        # if options_out['type'] == 'spectraplot':
-        #     print(f'[INFO] Plot type: spectraplot')
-        #     options_out = self.get_options_spectraplot(section, options_out)
 
         if options_out['type'].startswith('statstable'):
             print(f'[INFO] Plot type: statstable')
@@ -101,32 +91,9 @@ class PlotOptions:
             print(f'[INFO] Plot type: {options_out["type"]}')
             options_out = self.get_options_impl(options_out['type'], section, options_out)
 
-        # if options_out['type'] == 'histogram':
-        #     print(f'[INFO] Plot type: histogram')
-        #     options_out = self.get_options_histogram(section,options_out)
-        #
-        # if options_out['type'] == 'timeseries':
-        #     print(f'[INFO] Plot type: timeseries')
-        #     options_out = self.get_options_timeseries(section, options_out)
-        #
-        # if options_out['type'] == 'sequence':
-        #     print(f'[INFO] Plot type: sequence')
-        #     options_out = self.get_options_sequence(section, options_out)
-
-        # if options_out['type'] == 'statswlplot':
-        #     options_out = self.get_select_options(section, options_out)
-        #     options_out = self.get_options_statswlplot(section, options_out)
-        # if options_out['type'] == 'spectraplot':
-        #     options_out['type_rrs'] = self.get_value_param(section, 'type_rrs', 'ins', 'str')
-        #     if options_out['type_rrs'].startswith('flag'):
-        #         options_out = self.get_group_options(section, options_out)
-        #     options_out = self.get_options_spectraplot(section, options_out)
-        #     options_out = self.get_select_options(section, options_out)
-        # if options_out['type'] == 'flagplot':
-        #      options_out = self.get_options_flag(section, options_out)
         if options_out is not None:
             for option in options_out:
-                print(option, '->', options_out[option])
+                print(f'[INFO] [PLOT_OPTIONS]{option}->{options_out[option]}')
 
         return options_out
 

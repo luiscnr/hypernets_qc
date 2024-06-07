@@ -41,75 +41,96 @@ class HYPERNETS_DAY:
         date_folder = self.get_folder_date(site, date_here)
         if date_folder is None:
             return
-        list_sequences = self.get_sequences_date_from_file_list(site, date_here)
+        ##list_sequences is obtained from sequence_list.txt (CNR) or sequence folders (RBINS)
+        list_sequences,use_seq_folders = self.get_sequences_date_from_file_list(site, date_here)
         if len(list_sequences) == 0:
             print(f'[WARNING] No sequences found for date: {date_here}')
             return
         list_seq_refs = [x[3:-2] for x in list_sequences]
 
-        for name in os.listdir(date_folder):
-            if name.find('L2A_REF') > 0 and name.endswith('nc'):
-                sequence_ref = name.split('_')[5]
-                try:
-                    list_seq_refs.index(sequence_ref)
-                    if sequence_ref not in self.files_dates.keys():
-                        self.files_dates[sequence_ref] = {
-                            'file_l2': os.path.join(date_folder, name),
-                            'file_l1': None,
-                            'file_images': None,
-                            'valid': True
-                        }
-                    else:
-                        self.files_dates[sequence_ref]['file_l2'] = os.path.join(date_folder, name)
-                except:
-                    pass
-            if name.find('L1C_ALL') > 0 and name.endswith('nc'):
-                sequence_ref = name.split('_')[5]
-                try:
-                    list_seq_refs.index(sequence_ref)
-                    if sequence_ref not in self.files_dates.keys():
-                        self.files_dates[sequence_ref] = {
-                            'file_l2': None,
-                            'file_l1': os.path.join(date_folder, name),
-                            'file_images': None,
-                            'valid': True
-                        }
-                    else:
-                        self.files_dates[sequence_ref]['file_l1'] = os.path.join(date_folder, name)
-                except:
-                    pass
-            if name.find('IMG') > 0 and name.endswith('jpg'):
-                sequence_ref = name.split('_')[4]
-                try:
-                    list_seq_refs.index(sequence_ref)
-                    if sequence_ref not in self.files_dates.keys():
-                        self.files_dates[sequence_ref] = {
-                            'file_l2': None,
-                            'file_l1': None,
-                            'file_images': [os.path.join(date_folder, name)],
-                            'valid': True
-                        }
-                    else:
-                        file_images = self.files_dates[sequence_ref]['file_images']
-                        if file_images is None:
-                            file_images = [os.path.join(date_folder, name)]
+        if use_seq_folders: ##rbins, files organized in sequence folders
+            folders_to_check = [os.path.join(date_folder,seq) for seq in list_sequences]
+            folders_to_check_images = [os.path.join(x,'image') for x in folders_to_check]
+        else: ##cnr, files in the same folder
+            folders_to_check = [date_folder]
+            folders_to_check_images = [date_folder]
+
+        ##check nc files
+        for folder_to_check in folders_to_check:
+            for name in os.listdir(folder_to_check):
+                if name.find('L2A_REF') > 0 and name.endswith('nc'):
+                    sequence_ref = name.split('_')[5]
+                    try:
+                        list_seq_refs.index(sequence_ref)
+                        if sequence_ref not in self.files_dates.keys():
+                            self.files_dates[sequence_ref] = {
+                                'file_l2': os.path.join(date_folder, name),
+                                'file_l1': None,
+                                'file_images': None,
+                                'valid': True
+                            }
                         else:
-                            file_images.append(os.path.join(date_folder, name))
-                        self.files_dates[sequence_ref]['file_images'] = file_images
-                except:
-                    pass
+                            self.files_dates[sequence_ref]['file_l2'] = os.path.join(date_folder, name)
+                    except:
+                        pass
+                if name.find('L1C_ALL') > 0 and name.endswith('nc'):
+                    sequence_ref = name.split('_')[5]
+                    try:
+                        list_seq_refs.index(sequence_ref)
+                        if sequence_ref not in self.files_dates.keys():
+                            self.files_dates[sequence_ref] = {
+                                'file_l2': None,
+                                'file_l1': os.path.join(date_folder, name),
+                                'file_images': None,
+                                'valid': True
+                            }
+                        else:
+                            self.files_dates[sequence_ref]['file_l1'] = os.path.join(date_folder, name)
+                    except:
+                        pass
+
+        ##check pictures
+        for folder_to_check in folders_to_check_images:
+            for name in os.listdir(folder_to_check):
+                if name.find('IMG') > 0 and name.endswith('jpg'):
+                    sequence_ref = name.split('_')[4]
+                    try:
+                        list_seq_refs.index(sequence_ref)
+                        if sequence_ref not in self.files_dates.keys():
+                            self.files_dates[sequence_ref] = {
+                                'file_l2': None,
+                                'file_l1': None,
+                                'file_images': [os.path.join(date_folder, name)],
+                                'valid': True
+                            }
+                        else:
+                            file_images = self.files_dates[sequence_ref]['file_images']
+                            if file_images is None:
+                                file_images = [os.path.join(date_folder, name)]
+                            else:
+                                file_images.append(os.path.join(date_folder, name))
+                            self.files_dates[sequence_ref]['file_images'] = file_images
+                    except:
+                        pass
 
     def get_sun_images_date(self, site, date_here,ndw):
         sun_images = {}
 
         date_folder = self.get_folder_date(site, date_here)
         if date_folder is not None:
-            nimages = 0
             for name in os.listdir(date_folder):
                 if name.find('_0_0') > 0 and name.endswith('.jpg'):
                     seq = f'{name.split("_")[4]}00'
                     sun_images[seq] = os.path.join(date_folder, name)
-                    nimages = nimages + 1
+                ##checking sun images also in is SEQ*FOLDERS
+                if name.startswith('SEQ'):
+                    folder_seq = os.path.join(date_folder,name,'image')
+                    if os.path.isdir(folder_seq):
+                        for name_s in os.listdir(folder_seq):
+                            if name_s.find('_0_0') > 0 and name_s.endswith('.jpg'):
+                                seq = f'{name_s.split("_")[4]}00'
+                                sun_images[seq] = os.path.join(folder_seq, name)
+
 
         if ndw:
             return sun_images
@@ -173,6 +194,7 @@ class HYPERNETS_DAY:
     def get_files_date(self, site, date_here):
         self.files_dates = {}
         date_folder = self.get_folder_date(site, date_here)
+
         if date_folder is None:
             return
 
@@ -617,14 +639,20 @@ class HYPERNETS_DAY:
         folder_date = self.get_folder_date(site, date_here)
         file_list = os.path.join(folder_date, 'sequence_list.txt')
         list_sequences = []
-        if os.path.exists(file_list):
+        use_seq_folders = False
+        if os.path.exists(file_list): ##CNR
             f1 = open(file_list, 'r')
             for line in f1:
                 if len(line) > 0:
                     list_sequences.append(line.strip())
             f1.close()
             list_sequences.sort()
-        return list_sequences
+        else: #RBINS
+            use_seq_folders = True
+            for name in os.listdir(folder_date):
+                if name.startswith('SEQ') and os.path.isdir(os.path.join(folder_date,name)):
+                    list_sequences.append(name)
+        return list_sequences,use_seq_folders
 
     def get_images_sequence(self, site, date_here, sequence_folder):
         ssh_path = self.get_ssh_path(site, date_here, sequence_folder)

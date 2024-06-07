@@ -1,27 +1,27 @@
-#HYPERNETS-Daily Checking
+# HYPERNETS-Daily Checking
 
-##Usage:
+## Usage:
 
 1. Make sun plots
 
-`python make_hypernets_qc.py -m SUNPLOTS -site site –i input_path –o output_path -sd myDate -ed myDate -ndw –v`
+    python make_hypernets_qc.py -m SUNPLOTS -site site –i input_path –o output_path -sd myDate -ed myDate -ndw –v
 
 2. Prepare sun plot e-mail
 
-`python make_hypernets_qc.py -m SUNMAIL  -site site -i input_path -o output_path -sd myDate`
+    python make_hypernets_qc.py -m SUNMAIL  -site site -i input_path -o output_path -sd myDate
 
 3. Create daily NetCDF files
 
-`python make_hypernets_qc.py -m CREATEDAYFILES -site site –i input_path –o output_path -sd myDate -ed myDate -ndw -v`
+    python make_hypernets_qc.py -m CREATEDAYFILES -site site –i input_path –o output_path -sd myDate -ed myDate -ndw -v
 
 4. Create daily plots and PDF
 
-'python make_hypernets_qc.py -m REPORTDAYFILES -site site –i input_path –o output_path -sd myDate -ed myDate -ndw -v`
+   python make_hypernets_qc.py -m REPORTDAYFILES -site site –i input_path –o output_path -sd myDate -ed myDate -ndw -v
 
 
 Step 4 requires the configuration file: /output_path/site/ConfigPlotSummary.ini
 
-##Example of bash script for launching daily check for a single site (path needs to be added):
+## Example of bash script for launching daily check for a single site (path needs to be added):
 
 
     myDate=$( date --date yesterday +%F )

@@ -19,7 +19,13 @@
    python make_hypernets_qc.py -m REPORTDAYFILES -site site –i input_path –o output_path -sd myDate -ed myDate -ndw -v
 
 
-Step 4 requires the configuration file: /output_path/site/ConfigPlotSummary.ini
+Configuration file is required. It should be saved in the site folder as: /output_path/site/ConfigPlotSummary.ini
+
+Alternatively, configuration file could also be passed as a parameter (-c option) in all the scripts, for instance:
+
+python make_hypernets_qc.py -m REPORTDAYFILES -site site -c configuration_file –i input_path –o output_path -sd myDate -ed myDate -ndw -v
+
+Examples of configuration files are available in the folder config_files
 
 ## Example of bash script for launching daily check for a single site (path needs to be added):
 

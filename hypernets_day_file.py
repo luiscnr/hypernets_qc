@@ -43,6 +43,7 @@ class HYPERNETS_DAY_FILE:
         self.rho = r'ρ$_w$'
 
         self.flag_builder = None
+        self.sequences_no_data = None
 
     def get_sequences(self):
 
@@ -596,7 +597,7 @@ class HYPERNETS_DAY_FILE:
             pm.save_fig(f'{file_out_base}_all{self.format_img}')
             pm.close_plot()
 
-    def save_report_summary_image(self, site, date_here, dir_img_summary):
+    def save_report_summary_image(self, site, date_here, dir_img_summary, daily_sequences_summary):
 
         file_out = os.path.join(os.path.dirname(self.file_nc),
                                 f'{site}_{date_here.strftime("%Y%m%d")}_DailySummary{self.format_img}')
@@ -621,11 +622,14 @@ class HYPERNETS_DAY_FILE:
         pmtop.plot_image(os.path.join(dir_img_summary, 'flag_plot.tif'), 0, 1)
         pmtop.plot_image(file_out_ts, 0, 2)
         pmtop.set_text(-1250, 50, f'DAILY SUMMARY REPORT - {date_here.strftime("%Y-%m-%d")}')
-        daily_sequences_summary = self.get_sequence_info()
-        line = f'Total sequences: {daily_sequences_summary["Total"]}. Available: {daily_sequences_summary["Available"]}.'
-        line = f'{line} QC Flagged: {daily_sequences_summary["QFlagged"]}.'
-        line = f'{line} Epsilon Flagged: {daily_sequences_summary["EFlagged"]}.'
-        line = f'{line} Valid: {daily_sequences_summary["Valid"]}'
+
+        line = f'Total sequences: {daily_sequences_summary["NTotal"]}/{daily_sequences_summary["expected_sequences"]}. Processed to L2: {daily_sequences_summary["NAvailable"]}.'
+        skip = ['NTotal', 'NAvailable', 'start_time', 'end_time', 'expected_sequences']
+        for key in daily_sequences_summary.keys():
+            if key in skip: continue
+            if daily_sequences_summary[key] == 0: continue
+            line = f'{line} {key}: {daily_sequences_summary[key]}. '
+
         pmtop.set_text_size(-1750, 850, line, 8)
         pmtop.save_fig(file_out_top)
         pmtop.close_plot()
@@ -683,6 +687,61 @@ class HYPERNETS_DAY_FILE:
             os.remove(os.path.join(dir_img_summary, name))
 
         os.rmdir(dir_img_summary)
+
+    def save_report_image_only_pictures(self,site,delete_images,overwrite,seq,files_img):
+        print(f'[INFO] Sequence {seq} (No Level-2 data available)')
+        seq_time_str = seq[3:]
+        seq_time = dt.strptime(seq_time_str,'%Y%m%dT%H%M')
+        file_out = os.path.join(os.path.dirname(self.file_nc),f'{site}_{seq_time_str}_Report{self.format_img}')
+        if os.path.exists(file_out) and not overwrite:
+            return
+        names_img = ['sky_irr_1', 'sky_rad_1', 'water_rad', 'sky_rad_2', 'sky_irr_2', 'sun']
+        names_img_files = {}
+        for ref in files_img:
+            name_img = files_img[ref]['name_img']
+            if name_img in names_img:
+                names_img_files[name_img] = files_img[ref]['file_img']
+
+        dir_img = os.path.join(os.path.dirname(self.file_nc), 'IMG')
+        if not os.path.exists(dir_img):
+            os.mkdir(dir_img)
+
+        pm = PlotMultiple()
+        nrow = 2
+        ncol = 3
+        pm.start_multiple_plot_advanced(nrow, ncol, 10, 7.0, 0.02,0.15, True)
+        index_row = 0
+        index_col = 0
+        for name_img in names_img_files:
+            file_img = names_img_files[name_img]
+            title = name_img
+            if index_col == ncol:
+                index_col = 0
+                index_row = index_row + 1
+
+
+            if file_img is not None:
+                pm.plot_image_hypernets(file_img, index_row, index_col, title)
+            else:
+                pm.plot_blank_with_title(index_row, index_col, title)
+
+            index_col = index_col + 1
+
+        date_str = seq_time.strftime('%Y-%m-%d')
+        time_str = seq_time.strftime('%H:%M')
+        title = f'{site} {seq_time_str} - {date_str} {time_str} - No L2 Data'
+        pm.fig.suptitle(title)
+        line = f'ANOMALY: '
+        pm.fig.text(0.20,0.05,line)
+        pm.save_fig(file_out)
+        pm.close_plot()
+
+        if delete_images:
+            for name in os.listdir(dir_img):
+                file_here = os.path.join(dir_img, name)
+                os.remove(file_here)
+            os.rmdir(dir_img)
+
 
     def save_report_image(self, site, delete_images, overwrite):
         print(f'[INFO] Sequence {self.isequence}: SEQ{self.sequences[self.isequence]}')
@@ -981,7 +1040,8 @@ class HYPERNETS_DAY_FILE:
             self.plot_time_series_from_options(options_figure)
         if options_figure['type'] == 'sequence':
             print(f'[INFO] Sequence plot')
-            self.plot_sequence_plot_from_options(options_figure)
+            daily_sequence_summary =  self.plot_sequence_plot_from_options(options_figure)
+            return daily_sequence_summary
         if options_figure['type'] == 'flagplot' and options_figure['type_flagplot'] == 'comparison':
             print(f'[INFO] Flag plot')
             self.plot_flag_plot_comparison(options_figure)
@@ -989,6 +1049,7 @@ class HYPERNETS_DAY_FILE:
             print(f'[INFO] Angle plot')
             self.plot_angle_plot_from_options(options_figure)
 
+        return None
     def get_sequence_info(self):
 
         dataset = Dataset(self.file_nc)
@@ -1084,8 +1145,25 @@ class HYPERNETS_DAY_FILE:
             print('[ERROR] Plot is only created for a single day')
             return
 
-        qf_array = dataset.variables['l2_quality_flag'][:]
-        epsilon_array = dataset.variables['l2_epsilon'][:]
+        # print(options_figure)
+
+        use_default_flag = True
+        if options_figure['flagBy'] is not None:
+            # print('===========================================================================================================')
+            options_figure['flagType'] = 'flag'
+            options_figure = self.check_gs_options_impl(options_figure, 'flagBy', 'flagType', 'flagValues')
+            if options_figure['flagBy'] in options_figure.keys() and len(
+                    options_figure[options_figure['flagBy']]['flag_values']) == 4:
+                use_default_flag = False
+                flag_meanings = options_figure[options_figure['flagBy']]['flag_meanings']
+                flag_values = options_figure[options_figure['flagBy']]['flag_values']
+                flag_array = options_figure[options_figure['flagBy']]['flag_array']
+                # print(options_figure[options_figure['flagBy']])
+            # print('********************************************************')
+        if use_default_flag:
+            qf_array = dataset.variables['l2_quality_flag'][:]
+            epsilon_array = dataset.variables['l2_epsilon'][:]
+            flag_meanings = ['FLAGGED', 'ENEG', 'EHIGH', 'VALID']
 
         time_fix_axis = self.get_fix_axis_time(options_figure, start_time_real, end_time_real)
         ntime = len(time_fix_axis)
@@ -1098,6 +1176,19 @@ class HYPERNETS_DAY_FILE:
         yarray = np.zeros(xarray.shape)
         hours_ticks = []
         minutes_ticks = []
+        daily_summary_sequences = {
+            'NTotal': 0,
+            'NAvailable': 0,
+            'start_time': time_fix_axis[0].strftime('%Y-%m-%d %H:%M'),
+            'end_time': time_fix_axis[-1].strftime('%Y-%m-%d %H:%M'),
+            'expected_sequences': ntime
+        }
+        legend_values = flag_meanings
+        if options_figure['legendValues'] is not None:
+            legend_values = options_figure['legendValues']
+        for f in legend_values:
+            daily_summary_sequences[f] = 0
+
         for itime in range(ntime):
             time_valid = np.logical_and(time_array >= time_fix_min_max[itime, 0],
                                         time_array < time_fix_min_max[itime, 1])
@@ -1108,17 +1199,33 @@ class HYPERNETS_DAY_FILE:
             if mtick not in minutes_ticks: minutes_ticks.append(mtick)
 
             if np.count_nonzero(time_valid) == 1:
-                qf_value = qf_array[time_valid][0]
-                epsilon_value = epsilon_array[time_valid][0]
-                if qf_value == 0:
-                    if epsilon_value < (-0.05):
-                        yarray[itime] = 2
-                    elif (-0.05) <= epsilon_value < 0.05:
-                        yarray[itime] = 3
-                    elif epsilon_value > 0.05:
-                        yarray[itime] = 4
+                daily_summary_sequences['NAvailable'] = daily_summary_sequences['NAvailable'] + 1
+                # print('time_valid_good-->',time_valid,time_valid.shape,)
+                if use_default_flag:
+                    qf_value = qf_array[time_valid][0]
+                    epsilon_value = epsilon_array[time_valid][0]
+                    if qf_value == 0:
+                        if epsilon_value < (-0.05):
+                            yarray[itime] = 2
+                            daily_summary_sequences['ENEG'] = daily_summary_sequences['ENEG'] + 1
+                        elif (-0.05) <= epsilon_value < 0.05:
+                            daily_summary_sequences['VALID'] = daily_summary_sequences['VALID'] + 1
+                            yarray[itime] = 3
+                        elif epsilon_value > 0.05:
+                            daily_summary_sequences['EHIGH'] = daily_summary_sequences['EHIGH'] + 1
+                            yarray[itime] = 4
+                    else:
+                        daily_summary_sequences['FLAGGED'] = daily_summary_sequences['FLAGGED']+1
+                        yarray[itime] = 1
                 else:
-                    yarray[itime] = 1
+                    try:
+                        fvalue = flag_array[time_valid]
+                        index_flag = flag_values.index(int(fvalue))
+                        flag_meaning = legend_values[index_flag]
+                        daily_summary_sequences[flag_meaning] = daily_summary_sequences[flag_meaning]+1
+                        yarray[itime] = index_flag + 1
+                    except:
+                        pass
 
         hours_ticks.reverse()
         plt.Figure()
@@ -1127,12 +1234,34 @@ class HYPERNETS_DAY_FILE:
         for itime, tf in enumerate(time_fix_axis):
             data.loc[tf.strftime('%H')].at[tf.strftime('%M')] = yarray[itime]
 
-        colors = ['red', 'cyan', 'green', 'magenta']
-        ax = sns.heatmap(data, vmin=1, vmax=4, cmap=colors, linewidths=0.5, linecolor='gray')
+
+        if self.sequences_no_data is not None and len(self.sequences_no_data) > 0:
+            daily_summary_sequences['NTotal'] = daily_summary_sequences['NAvailable'] + len(self.sequences_no_data)
+            for seq in self.sequences_no_data:
+                time_stamp_seq = dt.strptime(seq[3:], '%Y%m%dT%H%M').replace(tzinfo=pytz.utc).timestamp()
+                iwhere = np.where(np.logical_and(time_stamp_seq>=time_fix_min_max[:,0],time_stamp_seq<time_fix_min_max[:,1]))
+                if len(iwhere[0])>0:
+                    index = iwhere[0][0]
+                    date_seq = dt.utcfromtimestamp(time_fix_axis_ts[index])
+                    data.loc[date_seq.strftime('%H')].at[date_seq.strftime('%M')] = 0
+        else:
+            daily_summary_sequences['NTotal'] = daily_summary_sequences['NAvailable']
+
+        if options_figure['color'] is not None:
+            colors = ['gainsboro'] + options_figure['color']
+        else:
+            colors = ['gainsboro', 'red', 'cyan', 'green', 'magenta']
+        vmax = len(colors) - 1
+        ax = sns.heatmap(data, vmin=0, vmax=vmax, cmap=colors, linewidths=0.5, linecolor='gray')
         plt.yticks(rotation='horizontal')
         colorbar = ax.collections[0].colorbar
-        colorbar.set_ticks([1.5, 2.25, 3, 3.75])
-        colorbar.set_ticklabels(['FLAGGED', 'ENEG', 'VALID', 'EHIGH'], rotation=90)
+        ticks = np.arange(0.5, vmax, 0.75).tolist()
+        if options_figure['legendTicks'] is not None:
+            ticks = options_figure['legendTicks']
+        colorbar.set_ticks(ticks)
+
+        legend_values = ['NO-L2'] + legend_values
+        colorbar.set_ticklabels(legend_values, rotation=90)
         colorbar.ax.tick_params(size=0)
         plt.xlabel('Minutes')
         plt.ylabel('Hours')
@@ -1149,7 +1278,10 @@ class HYPERNETS_DAY_FILE:
 
         plt.close()
 
+
         dataset.close()
+
+        return daily_summary_sequences
 
     def plot_angle_plot_from_options(self, options_figure):
 

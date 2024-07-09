@@ -1,4 +1,5 @@
 from datetime import datetime as dt
+from datetime import timedelta
 import os, subprocess, pytz
 from netCDF4 import Dataset
 from plot_multiple import PlotMultiple
@@ -35,6 +36,9 @@ class HYPERNETS_DAY:
         self.n_series = 50
         self.files_dates = {}
         self.dataset_w = None
+
+        self.rgb_refs = ['003', '006', '009', '012', '015', '016']
+        self.rgb_pictures_names = ['sky_irr_1', 'sky_rad_1', 'water_rad', 'sky_rad_2', 'sky_irr_2', 'sun']
 
     def get_files_date_nodownload(self, site, date_here):
         self.files_dates = {}
@@ -112,6 +116,73 @@ class HYPERNETS_DAY:
                             self.files_dates[sequence_ref]['file_images'] = file_images
                     except:
                         pass
+
+    def get_disk_usage_log_file(self,site,ndw):
+        file_log = os.path.join(self.path_data, site,f'disk-usage_{site}.log')
+        if ndw:
+            if os.path.exists(file_log):
+                return file_log
+            else:
+                return None
+        if site == 'JSIT':
+            path_log = f'{self.base_folder_l2_npl}/{site}/LOGS/disk-usage.log'
+            self.transfer_file_ssh_npl(path_log, file_log)
+        else:
+            path_log=f'{self.base_folder_l2_rbins}/{site}/LOGS/disk-usage.log'
+            self.transfer_file_ssh(path_log, file_log)
+        if os.path.exists(file_log):
+            return file_log
+        else:
+            return None
+
+    def get_last_available_log(self,site,type_log,ndw):
+        file_log = os.path.join(self.path_data, site, f'last_{type_log}_{site}.log')
+        if ndw:
+            if os.path.exists(file_log):
+                return file_log
+            else:
+                return None
+
+        list_files = self.get_list_log_files_date(dt.now(),site,type_log)
+        if len(list_files)==0: list_files = self.get_list_log_files_date(dt.now()-timedelta(hours=24),site,type_log)
+        if len(list_files)==0:
+            print(f'[WARNING]{type_log} log for {site} was not found in the last 2 days')
+            return None
+        date_ref = dt.now()-timedelta(days=3)
+        file_server_last = None
+        for name in list_files:
+            try:
+                date_file = dt.strptime(name.split('/')[-1][:15],'%Y-%m-%d-%H%M')
+                if date_file>date_ref:
+                    file_server_last = name
+                    date_ref = date_file
+            except:
+                pass
+
+
+        if site=='JSIT':
+            self.transfer_file_ssh_npl(file_server_last,file_log)
+        else:
+            self.transfer_file_ssh(file_server_last, file_log)
+        if os.path.exists(file_log):
+            return file_log
+        else:
+            return None
+
+    #type_log: hello, access, webcam, sequence
+    def get_list_log_files_date(self,work_date,site,type_log):
+        url_base = self.url_base
+        ssh_base = self.ssh_base
+        base_folder = self.base_folder_l2_rbins
+        if site == 'JSIT':
+            url_base = self.url_base_npl
+            ssh_base = self.ssh_base_npl
+            base_folder = self.base_folder_l2_npl
+        work_date_str = work_date.strftime('%Y-%m-%d')
+        path_log = f'{base_folder}/{site}/LOGS/{work_date_str}*{type_log}.log'
+        cmd = f'{ssh_base} {url_base} ls {path_log}'
+        list_files = self.get_list_files_from_ls_cmd(cmd)
+        return list_files
 
     def get_sun_images_date(self, site, date_here,ndw):
         sun_images = {}
@@ -191,6 +262,24 @@ class HYPERNETS_DAY:
         name_new = f'HYPTERNETS_{type}_{site}_IMG_{seq[3:-2]}_{date_img_str}_{picture}_0_0_v2.0.jpg'
         return name_new
 
+    def get_sequences_info(self,site,date_here,sequences_with_data):
+        all_sequences,use_seq_folders = self.get_sequences_date_from_file_list(site,date_here)
+
+        all_sequences = [x[:-2] for x  in all_sequences]
+        sequences_with_data = [f'SEQ{x}' for x in sequences_with_data]
+
+        sequences_without_data = []
+        all_sequences_info = {}
+        for seq in all_sequences:
+            if seq not in sequences_with_data:
+                sequences_without_data.append(seq)
+                all_sequences_info[seq]=-1
+            else:
+                all_sequences_info[seq]=sequences_with_data.index(seq)
+
+        return sequences_without_data,all_sequences_info
+
+
     def get_files_date(self, site, date_here):
         self.files_dates = {}
         date_folder = self.get_folder_date(site, date_here)
@@ -255,7 +344,7 @@ class HYPERNETS_DAY:
                     pm.plot_blank_with_title(irow, icol, title)
 
         print(f'[INFO] Saving sun plot to: {output_file}')
-        pm.save_fig(output_file)
+        pm.save_fig_with_resolution(output_file, 150)
         pm.close_plot()
 
     def get_file_date_complete(self, site, date_here):
@@ -266,6 +355,31 @@ class HYPERNETS_DAY:
         file_date = os.path.join(folder_date, f'HYPERNETES_W_DAY_{date_here_str}.nc')
 
         return file_date
+
+    def get_files_img_for_sequences_no_data(self,site,date_here,seq):
+        files_img = {}
+        for name_img,ref in zip(self.rgb_pictures_names,self.rgb_refs):
+            files_img[ref]={
+                'name_img': name_img,
+                'file_img': None
+            }
+        date_folder = self.get_folder_date(site, date_here)
+        if date_folder is None:
+            return
+        seq_ref = seq.replace('SEQ','IMG_')
+        #print('--------------------------------------->',seq)
+        for name in os.listdir(date_folder):
+            #print(name,seq_ref)
+            if name.endswith('.jpg') and name.find(seq_ref)>0:
+                name_s = name.split('_')
+                ref = name_s[6]
+                if ref not in files_img.keys():
+                    continue
+                files_img[ref]['file_img'] = os.path.join(date_folder,name)
+        return files_img
+
+
+
 
     def get_hypernets_day_file(self, site, date_here):
 
@@ -324,49 +438,51 @@ class HYPERNETS_DAY:
 
         ##rgb variables
         print(f'[INFO] Creating image variables...')
+        ##rgb variables
+        print(f'[INFO] Creating image variables...')
+        # self.rgb_refs = ['003', '006', '009', '012', '015', '016']
         rgb_variables = {
             'pictures_sky_irr_1': {
-                'ref': '003',
+                'ref': self.rgb_refs[0],
                 'oza': 180,
                 'oaa': 90,
                 'prefix': 'HYPERNETS_W_VEIT_IMG',
-                'suffix': '003_180_90_v2.0.jpg'
+                'suffix': f'{self.rgb_refs[0]}_180_90_v2.0.jpg'
             },
             'pictures_sky_rad_1': {
-                'ref': '006',
+                'ref': self.rgb_refs[1],
                 'oza': 140,
                 'oaa': 90,
                 'prefix': 'HYPERNETS_W_VEIT_IMG',
-                'suffix': '006_140_90_v2.0.jpg'
+                'suffix': f'{self.rgb_refs[1]}_140_90_v2.0.jpg'
             },
             'pictures_water_rad': {
-                'ref': '009',
+                'ref': self.rgb_refs[2],
                 'oza': 40,
                 'oaa': 90,
                 'prefix': 'HYPERNETS_W_VEIT_IMG',
-                'suffix': '009_40_90_v2.0.jpg'
+                'suffix': f'{self.rgb_refs[2]}_40_90_v2.0.jpg'
             },
             'pictures_sky_rad_2': {
-                'ref': '012',
+                'ref': self.rgb_refs[3],
                 'oza': 140,
                 'oaa': 90,
                 'prefix': 'HYPERNETS_W_VEIT_IMG',
-                'suffix': '012_140_90_v2.0.jpg'
+                'suffix': f'{self.rgb_refs[3]}_140_90_v2.0.jpg'
             },
             'pictures_sky_irr_2': {
-                'ref': '015',
+                'ref': self.rgb_refs[4],
                 'oza': 180,
                 'oaa': 90,
                 'prefix': 'HYPERNETS_W_VEIT_IMG',
-                'suffix': '015_180_90_v2.0.jpg'
+                'suffix': f'{self.rgb_refs[4]}_180_90_v2.0.jpg'
             },
             'pictures_sun': {
-                'ref': '016',
+                'ref': self.rgb_refs[5],
                 'oza': 0,
                 'oaa': 0,
                 'prefix': 'HYPERNETS_W_VEIT_IMG',
-                'suffix': '016_0_0_v2.0.jpg'
-
+                'suffix': f'{self.rgb_refs[5]}_0_0_v2.0.jpg'
             }
         }
         for rgb_var in rgb_variables:
@@ -453,16 +569,27 @@ class HYPERNETS_DAY:
 
             dataset.close()
 
+    def set_rgb_refs(self,config_file_summary):
+        import configparser
+        options = configparser.ConfigParser()
+        options.read(config_file_summary)
+        if options.has_option('GLOBAL_OPTIONS', 'rgb_refs'):
+            value = options['GLOBAL_OPTIONS']['rgb_refs'].strip()
+            if len(value.split(','))==6:
+                self.rgb_refs = [x.strip() for x in value.split(',')]
+                print(f'[INFO] Camera image refs sets to: {self.rgb_refs}')
+
     def set_rgb_images_data(self):
         seq_list = list(self.files_dates.keys())
         seq_list.sort()
+        #self.rgb_refs = ['003', '006', '009', '012', '015', '016']
         rgb_variables = {
-            '003': {'name_var': 'pictures_sky_irr_1', 'check_at': False},
-            '006': {'name_var': 'pictures_sky_rad_1', 'check_at': False},
-            '009': {'name_var': 'pictures_water_rad', 'check_at': False},
-            '012': {'name_var': 'pictures_sky_rad_2', 'check_at': False},
-            '015': {'name_var': 'pictures_sky_irr_2', 'check_at': False},
-            '016': {'name_var': 'pictures_sun', 'check_at': False}
+            self.rgb_refs[0]: {'name_var': 'pictures_sky_irr_1', 'check_at': False},
+            self.rgb_refs[1]: {'name_var': 'pictures_sky_rad_1', 'check_at': False},
+            self.rgb_refs[2]: {'name_var': 'pictures_water_rad', 'check_at': False},
+            self.rgb_refs[3]: {'name_var': 'pictures_sky_rad_2', 'check_at': False},
+            self.rgb_refs[4]: {'name_var': 'pictures_sky_irr_2', 'check_at': False},
+            self.rgb_refs[5]: {'name_var': 'pictures_sun', 'check_at': False}
         }
         for idx in range(len(seq_list)):
             seq = seq_list[idx]

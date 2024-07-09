@@ -838,6 +838,26 @@ options_sequences = {
     'frequency':{
         'default': -999.0,
         'type': 'float',
+    },
+    'flagBy':{
+        'default': None,
+        'type': 'str'
+    },
+    'flagValues':{
+        'default': None,
+        'type': 'strlist'
+    },
+    'legendValues':{
+        'default': None,
+        'type': 'strlist'
+    },
+    'legendTicks':{
+        'default': None,
+        'type': 'floatlist'
+    },
+    'color':{
+        'default': None,
+        'type': 'strlist'
     }
 }
 

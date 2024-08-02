@@ -118,9 +118,11 @@ def make_report_files(input_path, output_path, site, start_date, end_date):
                     print(f'[INFO] Retrieving daily sequences summary...')
                     daily_sequences_summary = plot_from_options(hdayfile, config_file_summary, dir_img_summary,
                                                                 sequences_no_data, True)
-                    file_info = os.path.join(dir_img_summary, 'sequence_info.tif')
-                    os.remove(file_info)
-                    os.rmdir(dir_img_summary)
+
+                    if os.path.isdir(dir_img_summary):
+                        for name in os.listdir(dir_img_summary):
+                            os.remove(os.path.join(dir_img_summary,name))
+                        os.rmdir(dir_img_summary)
             else:
                 daily_sequences_summary = plot_from_options(hdayfile, config_file_summary, dir_img_summary,
                                                             sequences_no_data, False)
@@ -150,13 +152,14 @@ def make_report_files(input_path, output_path, site, start_date, end_date):
         file_pdf = os.path.join(folder_day, name_pdf)
         file_qc_mail = os.path.join(output_path, site, 'QCMail.mail')
         public_link = ''
-        owncloud_info = {}
+        owncloud_info = None
         if os.path.exists(config_file_summary):
             options = configparser.ConfigParser()
             options.read(config_file_summary)
             if options.has_option('GLOBAL_OPTIONS', f'public_link'):
                 public_link = options['GLOBAL_OPTIONS'][f'public_link'].strip()
             owncloud_options = ['owncloud_client', 'owncloud_user', 'owncloud_password']
+            owncloud_info = {}
             for owc in owncloud_options:
                 if options.has_option('GLOBAL_OPTIONS', owc):
                     owncloud_info[owc] = options['GLOBAL_OPTIONS'][owc]

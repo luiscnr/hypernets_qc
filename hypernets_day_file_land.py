@@ -44,8 +44,8 @@ class HYPERNETS_DAY_FILE_LAND():
         self.context = {
             'bad_pointing_threshold_zenith': 3,
             'bad_pointing_threshold_azimuth': 3,
-            'plot_polar_min': None,
-            'plot_polar_max': None,
+            'plot_polar_min': 0,
+            'plot_polar_max': 0.8,
             'legendfontsize': 8,
             'fontsize': 14,
             'ylim_irradiance': None,

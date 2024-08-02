@@ -1,9 +1,10 @@
 from datetime import datetime as dt
 from datetime import timedelta
-import os, subprocess, pytz
+import os, subprocess, pytz, configparser
 from netCDF4 import Dataset
 from plot_multiple import PlotMultiple
 from hypernets_day_file import HYPERNETS_DAY_FILE
+from hypernets_day_file_land import HYPERNETS_DAY_FILE_LAND
 
 class HYPERNETS_DAY:
 
@@ -16,6 +17,8 @@ class HYPERNETS_DAY:
             self.path_output = path_output
         else:
             self.path_output = self.path_data
+        self.format_img = '.png'
+
         print(f'[INFO] Started HYPERNETS_DAY with:')
         print(f'[INFO] ->Input path data: {self.path_data}')
         print(f'[INFO] ->Output path data: {self.path_output}')
@@ -38,19 +41,26 @@ class HYPERNETS_DAY:
         self.dataset_w = None
 
         self.rgb_refs = ['003', '006', '009', '012', '015', '016']
+        self.rgb_oza = [180, 140, 40, 140, 180, 0]
+        self.rgb_oaa = [90, 90, 90, 90, 90, 0]
         self.rgb_pictures_names = ['sky_irr_1', 'sky_rad_1', 'water_rad', 'sky_rad_2', 'sky_irr_2', 'sun']
 
     def get_files_date_nodownload(self, site, date_here):
+
         self.files_dates = {}
         date_folder = self.get_folder_date(site, date_here)
         if date_folder is None:
             return
+
         ##list_sequences is obtained from sequence_list.txt (CNR) or sequence folders (RBINS)
         list_sequences,use_seq_folders = self.get_sequences_date_from_file_list(site, date_here)
+
         if len(list_sequences) == 0:
             print(f'[WARNING] No sequences found for date: {date_here}')
             return
         list_seq_refs = [x[3:-2] for x in list_sequences]
+
+
 
         if use_seq_folders: ##rbins, files organized in sequence folders
             folders_to_check = [os.path.join(date_folder,seq) for seq in list_sequences]
@@ -68,13 +78,14 @@ class HYPERNETS_DAY:
                         list_seq_refs.index(sequence_ref)
                         if sequence_ref not in self.files_dates.keys():
                             self.files_dates[sequence_ref] = {
-                                'file_l2': os.path.join(date_folder, name),
+                                'file_l2': os.path.join(folder_to_check, name),
                                 'file_l1': None,
                                 'file_images': None,
                                 'valid': True
                             }
+
                         else:
-                            self.files_dates[sequence_ref]['file_l2'] = os.path.join(date_folder, name)
+                            self.files_dates[sequence_ref]['file_l2'] = os.path.join(folder_to_check, name)
                     except:
                         pass
                 if name.find('L1C_ALL') > 0 and name.endswith('nc'):
@@ -84,12 +95,12 @@ class HYPERNETS_DAY:
                         if sequence_ref not in self.files_dates.keys():
                             self.files_dates[sequence_ref] = {
                                 'file_l2': None,
-                                'file_l1': os.path.join(date_folder, name),
+                                'file_l1': os.path.join(folder_to_check, name),
                                 'file_images': None,
                                 'valid': True
                             }
                         else:
-                            self.files_dates[sequence_ref]['file_l1'] = os.path.join(date_folder, name)
+                            self.files_dates[sequence_ref]['file_l1'] = os.path.join(folder_to_check, name)
                     except:
                         pass
 
@@ -104,15 +115,15 @@ class HYPERNETS_DAY:
                             self.files_dates[sequence_ref] = {
                                 'file_l2': None,
                                 'file_l1': None,
-                                'file_images': [os.path.join(date_folder, name)],
+                                'file_images': [os.path.join(folder_to_check, name)],
                                 'valid': True
                             }
                         else:
                             file_images = self.files_dates[sequence_ref]['file_images']
                             if file_images is None:
-                                file_images = [os.path.join(date_folder, name)]
+                                file_images = [os.path.join(folder_to_check, name)]
                             else:
-                                file_images.append(os.path.join(date_folder, name))
+                                file_images.append(os.path.join(folder_to_check, name))
                             self.files_dates[sequence_ref]['file_images'] = file_images
                     except:
                         pass
@@ -262,10 +273,20 @@ class HYPERNETS_DAY:
         name_new = f'HYPTERNETS_{type}_{site}_IMG_{seq[3:-2]}_{date_img_str}_{picture}_0_0_v2.0.jpg'
         return name_new
 
-    def get_sequences_info(self,site,date_here,sequences_with_data):
+    def get_sequences_info(self,site,date_here,sequences_with_data,sequences_abs_range):
+
         all_sequences,use_seq_folders = self.get_sequences_date_from_file_list(site,date_here)
 
         all_sequences = [x[:-2] for x  in all_sequences]
+
+        if sequences_abs_range is not None:
+            all_sequences_orig = all_sequences.copy()
+            all_sequences = []
+            for seq in all_sequences_orig:
+                date_here = dt.strptime(seq[3:],'%Y%m%dT%H%M').replace(tzinfo=pytz.utc).timestamp()
+                if sequences_abs_range[0] <= date_here <= sequences_abs_range[1]:
+                    all_sequences.append(seq)
+
         sequences_with_data = [f'SEQ{x}' for x in sequences_with_data]
 
         sequences_without_data = []
@@ -356,6 +377,15 @@ class HYPERNETS_DAY:
 
         return file_date
 
+    def get_file_date_land_complete(self, site, date_here):
+        folder_date = self.get_output_folder_date(site, date_here)
+        if folder_date is None:
+            return None
+        date_here_str = date_here.strftime('%Y%m%d')
+        file_date = os.path.join(folder_date, f'HYPERNETES_L_DAY_{date_here_str}.nc')
+
+        return file_date
+
     def get_files_img_for_sequences_no_data(self,site,date_here,seq):
         files_img = {}
         for name_img,ref in zip(self.rgb_pictures_names,self.rgb_refs):
@@ -379,18 +409,122 @@ class HYPERNETS_DAY:
         return files_img
 
 
+    def get_sequence_range(self, date_here,config_file_summary,absolute):
 
+        #from datetime import datetime as dt
+        options = configparser.ConfigParser()
+        options.read(config_file_summary)
+
+        if options.has_option('sequence_info','start_time') and options.has_option('sequence_info','end_time'):
+            start_time_str = options['sequence_info']['start_time']
+            end_time_str = options['sequence_info']['end_time']
+            frequency = 30
+            if options.has_option('sequence_info','frequency'):
+                try:
+                    frequency = int(options['sequence_info']['frequency'])
+                except:
+                    pass
+
+            try:
+                start_time = dt.strptime(f'{date_here.strftime("%Y-%m-%d")}T{start_time_str}','%Y-%m-%dT%H:%M')
+                end_time = dt.strptime(f'{date_here.strftime("%Y-%m-%d")}T{end_time_str}', '%Y-%m-%dT%H:%M')
+                frequency_seconds = frequency*60
+                nsequences = ((end_time.timestamp()-start_time.timestamp())/frequency_seconds)+1
+                if absolute:
+                    end_time = end_time + timedelta(minutes=frequency)
+                range = [start_time.replace(tzinfo=pytz.UTC).timestamp(),end_time.replace(tzinfo=pytz.UTC).timestamp(),int(nsequences)]
+                return range
+            except:
+                return None
+
+        return None
 
     def get_hypernets_day_file(self, site, date_here):
 
-
-        file_date = self.get_file_date_complete(site, date_here)
+        if site == 'JSIT':
+            file_date = self.get_file_date_land_complete(site, date_here)
+        else:
+            file_date = self.get_file_date_complete(site, date_here)
         if file_date is None:
             return None
         if os.path.exists(file_date):
-            return HYPERNETS_DAY_FILE(file_date, self.path_data)
+            if site == 'JSIT':
+                return HYPERNETS_DAY_FILE_LAND(file_date, self.path_data)
+            else:
+                return HYPERNETS_DAY_FILE(file_date, self.path_data)
         else:
+            print(f'[WARNING] Expected HYPERNETS day file {file_date} does not exist')
             return None
+
+    def start_file_date_land_complete(self, site, date_here, overwrite):
+
+        file_date = self.get_file_date_land_complete(site, date_here)
+        if file_date is None:
+            print(f'[WARNING] Date folder for {site} and {date_here} is not avaiable. Skipping...')
+            return -999
+        if os.path.exists(file_date) and not overwrite:
+            print(f'[WARNING] File: {file_date} already exists. Skipping')
+            return -100
+        if len(self.files_dates) == 0:
+            print(f'[WARNING] Dates are not avaiable for this date. Skipping...')
+            return -1
+        seq_list = list(self.files_dates.keys())
+        seq_list.sort()
+
+        index_seq_ref = -1
+        dims = None
+        nseq_valid = 0
+        for iseq in range(len(seq_list)):
+            seq = seq_list[iseq]
+
+            dims_here = self.check_dimensions_land(seq)
+            if dims_here is not None:
+                dims = dims_here
+                index_seq_ref = iseq
+                nseq_valid = nseq_valid + 1
+            else:
+                self.files_dates[seq]['valid'] = False
+
+        if dims is None:
+            print(f'[WARNING] L1 files are not available for this date')
+            return -2
+
+        try:
+            self.dataset_w = Dataset(file_date, 'w')
+        except:
+            print(f'[WARNING] File {file_date} can not be created. Please check folder permissions')
+            return -3
+
+        ##dimensions
+        print(f'[INFO] Creating dimensions...')
+        self.dataset_w.createDimension('sequence')
+        self.dataset_w.createDimension('series', dims['series'])
+        self.dataset_w.createDimension('wavelength', dims['wavelength'])
+
+        rgb_variables = {}
+        for idx in range(6):
+            rgb_variables[f'pictures_{self.rgb_pictures_names[idx]}'] = {
+                'ref': self.rgb_refs[idx],
+                'oza': self.rgb_oza[idx],
+                'oaa': self.rgb_oaa[idx],
+                'prefix': f'HYPERNETS_L_{site}_IMG',
+                'suffix': f'{self.rgb_refs[idx]}_{self.rgb_oza[idx]}_{self.rgb_oaa[idx]}_v2_0.jpg'
+            }
+        for rgb_var in rgb_variables:
+            var = self.dataset_w.createVariable(rgb_var, 'f8', ('sequence',), zlib=True, complevel=6)
+            for at in rgb_variables[rgb_var]:
+                var.setncattr(at, rgb_variables[rgb_var][at])
+
+        ##level1 and level 2 variables
+        print(f'[INFO] Creating level 1 variables...')
+        self.create_variables_land(1, seq_list[index_seq_ref])
+        print(f'[INFO] Creating level 2 variables...')
+        self.create_variables_land(2, seq_list[index_seq_ref])
+
+        ##var sequence time
+        self.dataset_w.createVariable('sequence_ref', 'f8', ('sequence',), zlib=True, complevel=6)
+
+        return nseq_valid
 
     def start_file_date_complete(self, site, date_here, overwrite):
 
@@ -441,50 +575,15 @@ class HYPERNETS_DAY:
         ##rgb variables
         print(f'[INFO] Creating image variables...')
         # self.rgb_refs = ['003', '006', '009', '012', '015', '016']
-        rgb_variables = {
-            'pictures_sky_irr_1': {
-                'ref': self.rgb_refs[0],
-                'oza': 180,
-                'oaa': 90,
-                'prefix': 'HYPERNETS_W_VEIT_IMG',
-                'suffix': f'{self.rgb_refs[0]}_180_90_v2.0.jpg'
-            },
-            'pictures_sky_rad_1': {
-                'ref': self.rgb_refs[1],
-                'oza': 140,
-                'oaa': 90,
-                'prefix': 'HYPERNETS_W_VEIT_IMG',
-                'suffix': f'{self.rgb_refs[1]}_140_90_v2.0.jpg'
-            },
-            'pictures_water_rad': {
-                'ref': self.rgb_refs[2],
-                'oza': 40,
-                'oaa': 90,
-                'prefix': 'HYPERNETS_W_VEIT_IMG',
-                'suffix': f'{self.rgb_refs[2]}_40_90_v2.0.jpg'
-            },
-            'pictures_sky_rad_2': {
-                'ref': self.rgb_refs[3],
-                'oza': 140,
-                'oaa': 90,
-                'prefix': 'HYPERNETS_W_VEIT_IMG',
-                'suffix': f'{self.rgb_refs[3]}_140_90_v2.0.jpg'
-            },
-            'pictures_sky_irr_2': {
-                'ref': self.rgb_refs[4],
-                'oza': 180,
-                'oaa': 90,
-                'prefix': 'HYPERNETS_W_VEIT_IMG',
-                'suffix': f'{self.rgb_refs[4]}_180_90_v2.0.jpg'
-            },
-            'pictures_sun': {
-                'ref': self.rgb_refs[5],
-                'oza': 0,
-                'oaa': 0,
-                'prefix': 'HYPERNETS_W_VEIT_IMG',
-                'suffix': f'{self.rgb_refs[5]}_0_0_v2.0.jpg'
+        rgb_variables = {}
+        for idx in range(6):
+            rgb_variables[f'pictures_{self.rgb_pictures_names[idx]}'] = {
+                'ref': self.rgb_refs[idx],
+                'oza': self.rgb_oza[idx],
+                'oaa': self.rgb_oaa[idx],
+                'prefix': f'HYPERNETS_W_{site}_IMG',
+                'suffix': f'{self.rgb_refs[idx]}_{self.rgb_oza[idx]}_{self.rgb_oaa[idx]}_v2_0.jpg'
             }
-        }
         for rgb_var in rgb_variables:
             var = self.dataset_w.createVariable(rgb_var, 'f8', ('series',), zlib=True, complevel=6)
             for at in rgb_variables[rgb_var]:
@@ -508,22 +607,31 @@ class HYPERNETS_DAY:
         self.set_sequence_data()
         self.set_global_attributtes(site, date_here)
 
+    def set_data_land(self, site, date_here):
+        self.set_netcdf_data_land(1)
+        self.set_netcdf_data_land(2)
+        self.set_rgb_images_data()
+        self.set_sequence_data()
+        self.set_global_attributtes(site, date_here)
+
     def set_sequence_data(self):
         print(f'[INFO] Set sequence reference data...')
 
         seq_list = list(self.files_dates.keys())
         seq_list.sort()
+        index_add = -1
         for idx in range(len(seq_list)):
             seq = seq_list[idx]
             if not self.files_dates[seq]['valid']:
                 continue
+            index_add = index_add + 1
             seq_time = dt.strptime(seq, '%Y%m%dT%H%M').replace(tzinfo=pytz.UTC)
             seq_time_stamp = float(seq_time.timestamp())
-            self.dataset_w.variables['sequence_ref'][idx] = seq_time_stamp
+            self.dataset_w.variables['sequence_ref'][index_add] = seq_time_stamp
 
     def set_global_attributtes(self, site, date_here):
         print(f'[INFO] Set global attributes...')
-        self.dataset_w.n_series = len(list(self.files_dates.keys()))
+        self.dataset_w.n_sequences = len(list(self.files_dates.keys()))
         self.dataset_w.creation_time = dt.utcnow().strftime('%Y-%m-%d %H:%M:%S')
         if date_here is not None:
             self.dataset_w.date = date_here.strftime('%Y-%m-%d')
@@ -569,35 +677,87 @@ class HYPERNETS_DAY:
 
             dataset.close()
 
-    def set_rgb_refs(self,config_file_summary):
-        import configparser
-        options = configparser.ConfigParser()
-        options.read(config_file_summary)
-        if options.has_option('GLOBAL_OPTIONS', 'rgb_refs'):
-            value = options['GLOBAL_OPTIONS']['rgb_refs'].strip()
-            if len(value.split(','))==6:
-                self.rgb_refs = [x.strip() for x in value.split(',')]
-                print(f'[INFO] Camera image refs sets to: {self.rgb_refs}')
+    def set_netcdf_data_land(self, level):
 
-    def set_rgb_images_data(self):
         seq_list = list(self.files_dates.keys())
         seq_list.sort()
-        #self.rgb_refs = ['003', '006', '009', '012', '015', '016']
-        rgb_variables = {
-            self.rgb_refs[0]: {'name_var': 'pictures_sky_irr_1', 'check_at': False},
-            self.rgb_refs[1]: {'name_var': 'pictures_sky_rad_1', 'check_at': False},
-            self.rgb_refs[2]: {'name_var': 'pictures_water_rad', 'check_at': False},
-            self.rgb_refs[3]: {'name_var': 'pictures_sky_rad_2', 'check_at': False},
-            self.rgb_refs[4]: {'name_var': 'pictures_sky_irr_2', 'check_at': False},
-            self.rgb_refs[5]: {'name_var': 'pictures_sun', 'check_at': False}
-        }
+        index_add = -1
         for idx in range(len(seq_list)):
             seq = seq_list[idx]
             if not self.files_dates[seq]['valid']:
                 continue
+            if level == 1:
+                file = self.files_dates[seq]['file_l1']
+                prename = 'l1'
+            if level == 2:
+                file = self.files_dates[seq]['file_l2']
+                prename = 'l2'
+
+            index_add = index_add + 1
+            print(f'[INFO] Set level{level} data for sequence {seq} [{index_add}]')
+            dataset = Dataset(file)
+            for var_name in dataset.variables:
+                if var_name.startswith('u_rel') or var_name.startswith('err'):
+                    continue
+                if var_name == 'wavelength' or var_name == 'bandwidth':
+                    continue
+                var_name_new = f'{prename}_{var_name}'
+                dimensions = self.dataset_w.variables[var_name_new].dimensions
+                ndim = len(dimensions)
+
+                if ndim == 2:
+                    self.dataset_w.variables[var_name_new][index_add, :] = dataset.variables[var_name][:]
+                elif ndim == 3:
+                    self.dataset_w.variables[var_name_new][index_add, :, :] = dataset.variables[var_name][:].transpose()
+
+            dataset.close()
+
+    def set_rgb_refs(self,config_file_summary):
+        options = configparser.ConfigParser()
+        options.read(config_file_summary)
+        if options.has_option('GLOBAL_OPTIONS', 'rgb_refs'):
+            value = options['GLOBAL_OPTIONS']['rgb_refs'].strip()
+            if len(value.split(',')) == 6:
+                for idx, x in enumerate(value.split(',')):
+                    xs = x.split('_')
+                    if len(xs) == 1:
+                        self.rgb_refs[idx] = xs[0].strip()
+                    elif len(xs) == 3:
+                        self.rgb_refs[idx] = xs[0].strip()
+                        self.rgb_oza[idx] = int(xs[1].strip())
+                        self.rgb_oaa[idx] = int(xs[2].strip())
+                # self.rgb_refs = [x.strip() for x in value.split(',')]
+                print(f'[INFO] Camera image refs set to: {self.rgb_refs}')
+                print(f'[INFO]   Zenith angles:{self.rgb_oza}')
+                print(f'[INFO]   Azimuth angles:{self.rgb_oaa}')
+
+        if options.has_option('GLOBAL_OPTIONS', 'rgb_names'):
+            value = options['GLOBAL_OPTIONS']['rgb_names'].strip()
+            if len(value.split(',')) == 6:
+                self.rgb_pictures_names = [x.strip() for x in value.split(',')]
+                print(f'[INFO] Camera images names set to: {self.rgb_pictures_names}')
+
+    def set_rgb_images_data(self):
+        seq_list = list(self.files_dates.keys())
+        seq_list.sort()
+        # self.rgb_refs = ['003', '006', '009', '012', '015', '016']
+        rgb_variables = {
+            self.rgb_refs[0]: {'name_var': f'pictures_{self.rgb_pictures_names[0]}', 'check_at': False},
+            self.rgb_refs[1]: {'name_var': f'pictures_{self.rgb_pictures_names[1]}', 'check_at': False},
+            self.rgb_refs[2]: {'name_var': f'pictures_{self.rgb_pictures_names[2]}', 'check_at': False},
+            self.rgb_refs[3]: {'name_var': f'pictures_{self.rgb_pictures_names[3]}', 'check_at': False},
+            self.rgb_refs[4]: {'name_var': f'pictures_{self.rgb_pictures_names[4]}', 'check_at': False},
+            self.rgb_refs[5]: {'name_var': f'pictures_{self.rgb_pictures_names[5]}', 'check_at': False}
+        }
+        index_add = -1
+        for idx in range(len(seq_list)):
+            seq = seq_list[idx]
+            if not self.files_dates[seq]['valid']:
+                continue
+            index_add = index_add + 1
             if self.files_dates[seq]['file_images'] is None:
                 continue
-            print(f'[INFO] Saving RGB images for sequence: {seq}')
+            print(f'[INFO] Saving RGB images for sequence: {seq} [{index_add}]')
             for file_img in self.files_dates[seq]['file_images']:
                 name = file_img.split('/')[-1]
                 name_s = name.split('_')
@@ -609,7 +769,7 @@ class HYPERNETS_DAY:
 
                 time_here = dt.strptime(name_s[5], '%Y%m%dT%H%M').replace(tzinfo=pytz.UTC)
                 time_stamp = float(time_here.timestamp())
-                variable[idx] = time_stamp
+                variable[index_add] = time_stamp
                 if not rgb_variables[ref]['check_at']:  ##check attributes
                     variable.oza = int(name_s[7])
                     variable.oaa = int(name_s[8])
@@ -629,6 +789,19 @@ class HYPERNETS_DAY:
         dim_out = {
             'scan': dataset.dimensions['scan'].size,
             'wavelength': dataset.dimensions['wavelength'].size
+        }
+        dataset.close()
+
+        return dim_out
+
+    def check_dimensions_land(self, seq):
+        file_l1 = self.files_dates[seq]['file_l1']
+        if file_l1 is None or self.files_dates[seq]['file_l2'] is None:
+            return None
+        dataset = Dataset(file_l1)
+        dim_out = {
+            'wavelength': dataset.dimensions['wavelength'].size,
+            'series': dataset.dimensions['series'].size
         }
         dataset.close()
 
@@ -657,6 +830,44 @@ class HYPERNETS_DAY:
                 dimensions = tuple(['series'] + list(dimensions))
             if level == 2 and len(dimensions) == 2 and dimensions[0] == 'wavelength' and dimensions[1] == 'series':
                 dimensions = ('series', 'wavelength')
+            fillValue = None
+            if '_FillValue' in dataset.variables[var_name].ncattrs():
+                fillValue = dataset.variables[var_name]._FillValue
+            var_new = self.dataset_w.createVariable(var_name_new, dataset.variables[var_name].datatype, dimensions,
+                                                    zlib=True, complevel=6, fill_value=fillValue)
+            for at in dataset.variables[var_name].ncattrs():
+                if at == '_FillValue':
+                    continue
+                var_new.setncattr(at, dataset.variables[var_name].getncattr(at))
+            if (var_name == 'wavelength' or var_name == 'bandwidth') and level == 2:
+                var_new[:] = dataset.variables[var_name][:]
+        dataset.close()
+
+    def create_variables_land(self, level, seq):
+        from netCDF4 import Dataset
+        if level == 1:
+            file = self.files_dates[seq]['file_l1']
+            prename = 'l1'
+        if level == 2:
+            file = self.files_dates[seq]['file_l2']
+            prename = 'l2'
+        dataset = Dataset(file)
+        for var_name in dataset.variables:
+            if var_name.startswith('u_rel') or var_name.startswith('err'):
+                continue
+            if var_name == 'wavelength' or var_name == 'bandwidth':
+                if level == 1:
+                    continue
+                elif level == 2:
+                    var_name_new = var_name
+            else:
+                var_name_new = f'{prename}_{var_name}'
+            dimensions = dataset.variables[var_name].dimensions
+            if len(dimensions) == 1 and dimensions[0] == 'series':
+                dimensions = tuple(['sequence'] + list(dimensions))
+            if len(dimensions) == 2 and dimensions[0] == 'wavelength' and dimensions[1] == 'series':
+                dimensions = ('sequence', 'series', 'wavelength')
+
             fillValue = None
             if '_FillValue' in dataset.variables[var_name].ncattrs():
                 fillValue = dataset.variables[var_name]._FillValue
@@ -763,9 +974,12 @@ class HYPERNETS_DAY:
         return list_sequences
 
     def get_sequences_date_from_file_list(self, site, date_here):
-        folder_date = self.get_folder_date(site, date_here)
-        file_list = os.path.join(folder_date, 'sequence_list.txt')
         list_sequences = []
+        folder_date = self.get_folder_date(site, date_here)
+        if folder_date is None:
+            return list_sequences
+        file_list = os.path.join(folder_date, 'sequence_list.txt')
+
         use_seq_folders = False
         if os.path.exists(file_list): ##CNR
             f1 = open(file_list, 'r')
@@ -816,3 +1030,56 @@ class HYPERNETS_DAY:
             except:
                 pass
         return listd
+
+    def save_report_image_only_pictures(self, site, delete_images, overwrite, seq, files_img, input_path_report):
+        print(f'[INFO] Sequence {seq} (No Level-2 data available)')
+        seq_time_str = seq[3:]
+        seq_time = dt.strptime(seq_time_str, '%Y%m%dT%H%M')
+        file_out = os.path.join(input_path_report, f'{site}_{seq_time_str}_Report{self.format_img}')
+        if os.path.exists(file_out) and not overwrite:
+            return
+        names_img = ['sky_irr_1', 'sky_rad_1', 'water_rad', 'sky_rad_2', 'sky_irr_2', 'sun']
+        names_img_files = {}
+        for ref in files_img:
+            name_img = files_img[ref]['name_img']
+            if name_img in names_img:
+                names_img_files[name_img] = files_img[ref]['file_img']
+
+        dir_img = os.path.join(input_path_report, 'IMG')
+        if not os.path.exists(dir_img):
+            os.mkdir(dir_img)
+
+        pm = PlotMultiple()
+        nrow = 2
+        ncol = 3
+        pm.start_multiple_plot_advanced(nrow, ncol, 10, 7.0, 0.02, 0.15, True)
+        index_row = 0
+        index_col = 0
+        for name_img in names_img_files:
+            file_img = names_img_files[name_img]
+            title = name_img
+            if index_col == ncol:
+                index_col = 0
+                index_row = index_row + 1
+
+            if file_img is not None:
+                pm.plot_image_hypernets(file_img, index_row, index_col, title)
+            else:
+                pm.plot_blank_with_title(index_row, index_col, title)
+
+            index_col = index_col + 1
+
+        date_str = seq_time.strftime('%Y-%m-%d')
+        time_str = seq_time.strftime('%H:%M')
+        title = f'{site} {seq_time_str} - {date_str} {time_str} - No L2 Data'
+        pm.fig.suptitle(title)
+        line = f'ANOMALY: ?'
+        pm.fig.text(0.20, 0.05, line)
+        pm.save_fig(file_out)
+        pm.close_plot()
+
+        if delete_images:
+            for name in os.listdir(dir_img):
+                file_here = os.path.join(dir_img, name)
+                os.remove(file_here)
+            os.rmdir(dir_img)

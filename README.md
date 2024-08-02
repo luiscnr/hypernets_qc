@@ -1,5 +1,17 @@
 # HYPERNETS-Daily Checking
 
+## Requirements:
+ 	Python: 3.10
+	matplotlib 3.8.4
+	netCDF4 1.6.5
+	numpy 1.26.4
+	pandas 2.2.2
+	pillow 10.3.0 
+	pytz 2024.1
+	seaborn 0.13.2
+	requests 2.31.0
+	six 1.16.0
+	
 ## Usage:
 
 1. Make sun plots

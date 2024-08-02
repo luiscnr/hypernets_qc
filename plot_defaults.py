@@ -718,6 +718,10 @@ options_spectraplots = {
     'sat_fill_style':{
         'default': sat_fill_style_default,
         'type': 'fillstyle'
+    },
+    'iseriesref':{
+        'default': 0,
+        'type': 'int'
     }
 }
 
@@ -810,6 +814,14 @@ options_timeseries = {
     'wlref':{
         'default': -999.0,
         'type': 'float'
+    },
+    'iseriesref':{
+        'default': [0],
+        'type': 'intlist'
+    },
+    'marker':{
+        'default': ['o'],
+        'type': 'strlist'
     }
 }
 
@@ -940,9 +952,15 @@ options_angleplot = {
     'min_data':{
         'default': 1.0e-5,
         'type': 'float'
+    },
+    'iseriesref':{
+        'default': [0],
+        'type': 'intlist'
+    },
+    'marker_series':{
+        'default': ['o'],
+        'type': 'strlist'
     }
-
-
 }
 
 def get_options_spectraplots():

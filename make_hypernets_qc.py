@@ -49,17 +49,36 @@ def make_report_files(input_path, output_path, site, start_date, end_date):
     if args.config_path:
         config_file_summary = args.config_path
     else:
-        config_file_summary = os.path.join(output_path,site,'ConfigPlotSummary.ini')
+        config_file_summary = os.path.join(output_path, site, 'ConfigPlotSummary.ini')
         if not os.path.exists(config_file_summary):
             config_file_summary = os.path.join(output_path, 'ConfigPlotSummary.ini')
     print('[INFO] Config file summary: ', config_file_summary)
 
+    daily_sequences_summary = None
     while work_date <= end_date:
         if args.verbose:
             print(f'--------------------------------------------------------------------------------------------------')
             print(f'[INFO] Date: {work_date}')
+
+        sequence_abs_range = None
+        if os.path.exists(config_file_summary):
+            sequence_abs_range = hday.get_sequence_range(work_date, config_file_summary, True)
+        if sequence_abs_range is not None:
+            print(
+                f'[INFO] Absolute sequence range: {dt.utcfromtimestamp(sequence_abs_range[0]).strftime("%Y-%m-%d %H:%M")}-{dt.utcfromtimestamp(sequence_abs_range[1]).strftime("%Y-%m-%d %H:%M")}')
+
         hdayfile = hday.get_hypernets_day_file(site, work_date)
-        sequences_no_data, sequences_all = hday.get_sequences_info(site, work_date, hdayfile.get_sequences())
+        if hdayfile is None:
+            sequences_all = hday.get_sequences_date_from_file_list(site, work_date)
+            sequences_all = [x[:-2] if len(x) == 18 else x for x in sequences_all]
+            sequences_no_data = sequences_all
+        else:
+            sequences_no_data, sequences_all = hday.get_sequences_info(site, work_date, hdayfile.get_sequences(),
+                                                                       sequence_abs_range)
+
+        print(f'[INFO] Total number of sequences with folders: {len(sequences_all)}')
+        print(f'[INFO] Sequences without L2 data: {len(sequences_no_data)}')
+
         output_folder_date = hday.get_output_folder_date(site, work_date)
         if output_folder_date is None:
             print(f'[ERROR] Path image date could not be created in {output_path}. Please review permissions')
@@ -70,6 +89,20 @@ def make_report_files(input_path, output_path, site, start_date, end_date):
                 f'[WARNING] HYPERNETS day file for date {work_date} is not available. Creating empty daily summary plot and skipping...')
             file_img = os.path.join(output_folder_date, f'{site}_{work_date.strftime("%Y%m%d")}_DailySummary.png')
             create_empty_image(file_img, site, work_date)
+            delete = False if args.nodelfiles else True
+            for seq in sequences_all:
+                if os.path.exists(config_file_summary):
+                    hday.set_rgb_refs(config_file_summary)
+                files_img = hday.get_files_img_for_sequences_no_data(site, work_date, seq)
+                hday.save_report_image_only_pictures(site, delete, args.overwrite, seq, files_img, output_folder_date)
+            sequence_range = hday.get_sequence_range(work_date, config_file_summary, False)
+            daily_sequences_summary = {
+                'NTotal': 0,
+                'NAvailable': 0,
+                'start_time': dt.utcfromtimestamp(sequence_range[0]).strftime('%Y-%m-%d %H:%M'),
+                'end_time': dt.utcfromtimestamp(sequence_range[1]).strftime('%Y-%m-%d %H:%M'),
+                'expected_sequences': sequence_range[2]
+            }
             work_date = work_date + timedelta(hours=interval)
             continue
         hdayfile.set_path_images_date(site, work_date)
@@ -83,26 +116,26 @@ def make_report_files(input_path, output_path, site, start_date, end_date):
                 print(f'[WARNING] Summary file: {output_path} alreaday exist. Skipping...')
                 if start_date == end_date:  ##required daily sequences summary:
                     print(f'[INFO] Retrieving daily sequences summary...')
-                    daily_sequences_summary = plot_from_options(hdayfile.file_nc, config_file_summary, dir_img_summary,
+                    daily_sequences_summary = plot_from_options(hdayfile, config_file_summary, dir_img_summary,
                                                                 sequences_no_data, True)
                     file_info = os.path.join(dir_img_summary, 'sequence_info.tif')
                     os.remove(file_info)
                     os.rmdir(dir_img_summary)
             else:
-                daily_sequences_summary = plot_from_options(hdayfile.file_nc, config_file_summary, dir_img_summary,
+                daily_sequences_summary = plot_from_options(hdayfile, config_file_summary, dir_img_summary,
                                                             sequences_no_data, False)
-                hdayfile.save_report_summary_image(site, work_date, dir_img_summary,daily_sequences_summary)
+                hdayfile.save_report_summary_image(site, work_date, dir_img_summary, daily_sequences_summary)
 
-            delete = False if args.nodelfiles else True
-            for seq in sequences_all:
-                isequence = sequences_all[seq]
-                if isequence >= 0:
-                    hdayfile.isequence = isequence
-                    hdayfile.save_report_image(site, delete, args.overwrite)
-                else:
-                    hday.set_rgb_refs(config_file_summary)
-                    files_img = hday.get_files_img_for_sequences_no_data(site, work_date, seq)
-                    hdayfile.save_report_image_only_pictures(site, delete, args.overwrite, seq, files_img)
+        delete = False if args.nodelfiles else True
+        for seq in sequences_all:
+            isequence = sequences_all[seq]
+            if isequence >= 0:
+                hdayfile.isequence = isequence
+                hdayfile.save_report_image(site, delete, args.overwrite)
+            else:
+                hday.set_rgb_refs(config_file_summary)
+                files_img = hday.get_files_img_for_sequences_no_data(site, work_date, seq)
+                hdayfile.save_report_image_only_pictures(site, delete, args.overwrite, seq, files_img)
 
         create_daily_pdf_report(input_path, output_path, site, work_date, file_summary, sequences_all)
 
@@ -123,14 +156,13 @@ def make_report_files(input_path, output_path, site, start_date, end_date):
             options.read(config_file_summary)
             if options.has_option('GLOBAL_OPTIONS', f'public_link'):
                 public_link = options['GLOBAL_OPTIONS'][f'public_link'].strip()
-            owncloud_options = ['owncloud_client','owncloud_user','owncloud_password']
+            owncloud_options = ['owncloud_client', 'owncloud_user', 'owncloud_password']
             for owc in owncloud_options:
-                if options.has_option('GLOBAL_OPTIONS',owc):
+                if options.has_option('GLOBAL_OPTIONS', owc):
                     owncloud_info[owc] = options['GLOBAL_OPTIONS'][owc]
                 else:
                     owncloud_info = None
                     break
-
 
         # public_link = 'https://file.sic.rm.cnr.it/index.php/s/rBeO2UMtdJ4F3Gx'
         print(f'[INFO] Creating e-mail file: {file_qc_mail}')
@@ -143,25 +175,34 @@ def make_report_files(input_path, output_path, site, start_date, end_date):
             'file_log_last_sequence': hday.get_last_available_log(site, 'sequence', True)
         }
         create_daily_mail_file(file_qc_mail, site, start_date, daily_sequences_summary, extra_info)
+        print(f'[INFO] PDF file: {file_pdf} --> {os.path.exists(file_pdf)}')
+        print(f'[INFO] Owncloud info: {owncloud_info}')
         if os.path.exists(file_pdf) and owncloud_info is not None:
             session = owncloud.Client(owncloud_info['owncloud_client'])
             session.login(owncloud_info['owncloud_user'], owncloud_info['owncloud_password'])
             session.put_file(f'/ESA-HYP-POP/LastQC_Reports/{site}_LastQC.pdf', file_pdf)
 
-def create_daily_mail_file(file_qc_mail,site,start_date,daily_sequences_summary,extra_info):
+
+def create_daily_mail_file(file_qc_mail, site, start_date, daily_sequences_summary, extra_info):
     fout = open(file_qc_mail, 'w')
     fout.write(f'QUALITY CONTROL - {site} - {start_date.strftime("%Y-%m-%d")}')
-    add_new_line(fout,'===================================')
-    add_new_line(fout,'')
+    add_new_line(fout, '===================================')
+    add_new_line(fout, '')
     if daily_sequences_summary is not None:
-        add_new_line(fout,'SEQUENCES SUMMARY')
-        add_new_line(fout,'=================')
+        if daily_sequences_summary['NTotal'] == 0:
+            add_new_line(fout, f'WARNING: No folder sequences found for {site} on {start_date.strftime("%Y-%m-%d")}')
+            add_new_line(fout, f'Please review if the system is working and folders are available in the server')
+            add_new_line(fout, '')
+
+        add_new_line(fout, 'SEQUENCES SUMMARY')
+        add_new_line(fout, '=================')
         add_new_line(fout, f'Start time:  {daily_sequences_summary["start_time"]}')
         add_new_line(fout, f'End time: {daily_sequences_summary["end_time"]}')
         add_new_line(fout, f'Expected sequences: {daily_sequences_summary["expected_sequences"]}')
         add_new_line(fout, f'Available sequences: {daily_sequences_summary["NTotal"]}')
         add_new_line(fout, f'Sequences processed to L2: {daily_sequences_summary["NAvailable"]}')
-        add_new_line(fout, f'Valid sequences after quality control: {daily_sequences_summary["VALID"]}')
+        if 'VALID' in daily_sequences_summary.keys():
+            add_new_line(fout, f'Valid sequences after quality control: {daily_sequences_summary["VALID"]}')
         add_new_line(fout, '')
 
     file_log_disk_usage = extra_info['file_log_disk_usage']
@@ -171,93 +212,115 @@ def create_daily_mail_file(file_qc_mail,site,start_date,daily_sequences_summary,
         add_new_line(fout, '=============')
         lines_disk_usage = get_lines_disk_usage(file_log_disk_usage)
         for line in lines_disk_usage:
-            add_new_line(fout,line)
+            add_new_line(fout, line)
 
     add_new_line(fout, 'DAILY CHECKING FILES')
     add_new_line(fout, '====================')
     add_new_line(fout, f'Ouput folder: {extra_info["folder_day"]}')
-    file_summary = os.path.join(extra_info["folder_day"],extra_info["name_summary"])
+    file_summary = os.path.join(extra_info["folder_day"], extra_info["name_summary"])
     add_new_line(fout, f'Summary file: {file_summary if os.path.exists(file_summary) else "Not. Av."}')
-    add_new_line(fout,'')
-    add_new_line(fout,f'PDF file: {extra_info["file_pdf"] if os.path.exists(extra_info["file_pdf"]) else "Not. Av."}')
+    add_new_line(fout, '')
+    add_new_line(fout, f'PDF file: {extra_info["file_pdf"] if os.path.exists(extra_info["file_pdf"]) else "Not. Av."}')
     if os.path.exists(extra_info["file_pdf"]):
-        add_new_line(fout,f'Link to PDF file: {extra_info["public_link"]}')
-    add_new_line(fout,'')
+        add_new_line(fout, f'Link to PDF file: {extra_info["public_link"]}')
+    add_new_line(fout, '')
 
     fout.close()
 
+
 def get_lines_disk_usage(file_log):
-    import numpy as np
     lines = ['']
-    if not os.path.exists(file_log):return lines
-    import pandas as pd
-    df = pd.read_csv(file_log,sep=' ')
+    if not os.path.exists(file_log): return lines
+    df = pd.read_csv(file_log, sep=' ')
     lines.append('DISK USAGE')
     lines.append('----------')
     last_line = df.iloc[-1]
-    used = float(last_line[1])/(1024*1024)
-    av = float(last_line[2])/(1024*1024)
+    used = float(last_line[1]) / (1024 * 1024)
+    av = float(last_line[2]) / (1024 * 1024)
     lines.append(f' Last measurement: {last_line[0]} Used: {used:.2f} Gb. Available: {av:.2f} Gb. %Use: {last_line[4]}')
 
     porc_ref = float(str(last_line[4])[:-1])
 
     nlines = len(df.index)
-    last_five_dates = []
-    date_ref = dt.strptime(last_line[0],'%Y-%m-%d-%H%M').replace(hour=12,minute=0,second=12)-timedelta(hours=24)
-    date_ref_str = date_ref.strftime('%Y-%m-%d')
+    last_five_dates = {}
+    date_ref = dt.strptime(last_line[0][:15], '%Y-%m-%d-%H%M').replace(hour=12, minute=0, second=12)
+    date_ref_str_loop = date_ref.strftime('%Y-%m-%d')
+    for i in range(5):
+        date_ref = date_ref - timedelta(hours=24)
+        date_ref_str = date_ref.strftime('%Y-%m-%d')
+        last_five_dates[date_ref_str] = None
+
     first_date_here_str = None
     last_date_here_str = None
-    used_array  = []
+    used_array = []
+    total_array = []
     porc_use_array = []
 
-    for idx in range(nlines-1,0,-1):
+    for idx in range(nlines - 1, 0, -1):
         line_here = df.loc[idx]
+        if pd.isna(line_here[0]):continue
         date_here_str = str(line_here[0])[:10]
-        if date_here_str==date_ref_str:
-            if len(last_five_dates)<5:
-                last_five_dates.append(line_here)
+
+
+        if date_here_str != date_ref_str_loop:
+            date_ref_str_loop = date_here_str
+            date_here_str_basic = dt.strptime(date_here_str, '%Y-%m-%d').replace(hour=12, minute=0, second=12).strftime(
+                '%Y-%m-%d')
+            if date_here_str_basic in last_five_dates.keys():
+                last_five_dates[date_here_str_basic] = line_here
             if last_date_here_str is None:
                 last_date_here_str = str(line_here[0])
 
             porc_here = float(str(line_here[4])[:-1])
-            if abs(porc_ref-porc_here)<2:
+            if abs(porc_ref - porc_here) < 2:
                 porc_ref = porc_here
                 used_array.append(float(line_here[1]))
+                total_array.append(float(line_here[1]) + float(line_here[2]))
                 porc_use_array.append(line_here[4])
-                date_ref = dt.strptime(line_here[0], '%Y-%m-%d-%H%M').replace(hour=12, minute=0, second=12) - timedelta(hours=24)
-                date_ref_str = date_ref.strftime('%Y-%m-%d')
                 first_date_here_str = str(line_here[0])
             else:
                 break
 
     lines.append(f' Overall period:')
-    start_used = used_array[-1] /(1024*1024)
+    start_used = used_array[-1] / (1024 * 1024)
     end_used = used_array[0] / (1024 * 1024)
     used_increase = []
     porc_used_increase = []
-    for idx in range(1,len(used_array)):
-        used_increase.append(used_array[idx-1]-used_array[idx])
-        porc_used_increase.append(float(str(porc_use_array[idx-1])[:-1])-float(str(porc_use_array[idx])[:-1]))
+    for idx in range(1, len(used_array)):
+        used_increase.append(used_array[idx - 1] - used_array[idx])
+        porc_used_increase.append(float(str(porc_use_array[idx - 1])[:-1]) - float(str(porc_use_array[idx])[:-1]))
 
-    avg_increase_mb = np.mean(np.array(used_increase))/1024
+    avg_increase = np.mean(np.array(used_increase))
+    avg_increase_mb = avg_increase / 1024
     avg_increase_porc = np.mean(np.array(porc_used_increase))
+
+    total_99 = np.min(total_array) * 0.99
+
+    remaining = total_99 - used_array[-1]
+    ndays = np.floor(remaining / avg_increase)
+    last_day = dt.strptime(last_date_here_str[:10], '%Y-%m-%d')
+    day_fill = last_day + timedelta(days=ndays)
 
     lines.append(f'  Start: {first_date_here_str} Used: {start_used:.2f} Gg. %Used: {porc_use_array[-1]}')
     lines.append(f'  End: {last_date_here_str} Used: {end_used:.2f} Gg. %Used: {porc_use_array[0]}')
     lines.append(f'  Average daily increase: {avg_increase_mb:.2f} Mb. ({avg_increase_porc:.3f}%).')
+    lines.append(f'  Number of days until 99%: {ndays:.0f} ({day_fill.strftime("%Y-%m-%d")}).')
 
     lines.append(' Last five days: ')
-    for line_here in last_five_dates:
-        used = float(line_here[1]) / (1024 * 1024)
-        av = float(line_here[2]) / (1024 * 1024)
-        lines.append(f'  {line_here[0]} Used: {used:.2f} Gb. Available: {av:.2f} Gb. %Use: {line_here[4]}')
+    for last_five_date in last_five_dates:
+        line_here = last_five_dates[last_five_date]
+        if line_here is None:
+            lines.append(f'  {last_five_date}: Data are not available')
+        else:
+            used = float(line_here[1]) / (1024 * 1024)
+            av = float(line_here[2]) / (1024 * 1024)
+            lines.append(f'  {line_here[0]} Used: {used:.2f} Gb. Available: {av:.2f} Gb. %Use: {line_here[4]}')
     lines.append('')
-
 
     return lines
 
 
-def add_new_line(fout,str):
+def add_new_line(fout, str):
     fout.write('\n')
     fout.write(str)
 
@@ -324,7 +387,7 @@ def make_create_dayfiles(input_path, output_path, site, start_date, end_date):
     if args.config_path:
         config_file_summary = args.config_path
     else:
-        config_file_summary = os.path.join(output_path,site,'ConfigPlotSummary.ini')
+        config_file_summary = os.path.join(output_path, site, 'ConfigPlotSummary.ini')
         if not os.path.exists(config_file_summary):
             config_file_summary = os.path.join(output_path, 'ConfigPlotSummary.ini')
     print('[INFO] Config file summary: ', config_file_summary)
@@ -353,44 +416,38 @@ def make_create_dayfiles(input_path, output_path, site, start_date, end_date):
 
         if args.verbose:
             print(f'[INFO] Number of sequences: {len(hday.files_dates)}')
-        nseq = hday.start_file_date_complete(site, work_date, args.overwrite)
+        if site == 'JSIT':  ##LAND
+            nseq = hday.start_file_date_land_complete(site, work_date, args.overwrite)
+        else:
+            nseq = hday.start_file_date_complete(site, work_date, args.overwrite)
         if nseq < 0:
             work_date = work_date + timedelta(hours=interval)
             continue
         else:
             if args.verbose:
-                print(f'[INFO] Valid sequences: {nseq}')
-        hday.set_data(site, work_date)
+                print(f'[INFO] Sequences with L2 data: : {nseq}')
+        if site == 'JSIT':  ##LAND
+            hday.set_data_land(site, work_date)
+        else:
+            hday.set_data(site, work_date)
         hday.close_datafile_complete()
         work_date = work_date + timedelta(hours=interval)
 
-    # hday = HYPERNETS_DAY(None)
-    # hday.get_files_date(site, date_here)
-    # hday.start_file_date_complete(site, date_here, True)
-    # hday.set_data(site, date_here)
-    # hday.close_datafile_complete()
-    # file_rgb = '/mnt/c/DATA_LUIS/INSITU_HYPSTAR/VEIT/2023/03/25/HYPERNETS_W_VEIT_IMG_20230325T1040_20240118T0338_009_40_90_v2.0.jpg'
-    # from PIL import Image
-    # import numpy as np
-    # img = Image.open(file_rgb)
-    # red_array_orig = np.array(img.getdata(0)).reshape(img.size)
-    # red_array = np.array(img.getdata(0)).reshape(img.size).astype(np.uint8)
 
-
-def plot_from_options(input_path, config_file, output_path_images,sequences_no_data,only_sequences_summary):
+def plot_from_options(hfile, config_file, output_path_images, sequences_no_data, only_sequences_summary):
     if not os.path.exists(config_file):
         print(f'[ERROR] Plot configuration file: {config_file} does not exist. ')
         return None
 
     if args.verbose:
-        print(f'[INFO] Started plotting from file: {input_path}')
+        print(f'[INFO] Started plotting from file: {hfile.file_nc}')
 
     options = configparser.ConfigParser()
     options.read(config_file)
-    hfile = HYPERNETS_DAY_FILE(input_path, None)
 
     poptions = PlotOptions(options, None)
     poptions.set_global_options()
+
     if output_path_images is not None:
         if not os.path.exists(output_path_images):
             try:
@@ -401,11 +458,10 @@ def plot_from_options(input_path, config_file, output_path_images,sequences_no_d
             poptions.global_options['output_path'] = output_path_images
 
     if poptions.global_options['output_path'] is None:
-        poptions.global_options['output_path'] = os.path.dirname(input_path)
+        poptions.global_options['output_path'] = os.path.dirname(hfile.file_nc)
 
-    fbuilder = FlagBuilder(input_path, options)
+    fbuilder = FlagBuilder(hfile.file_nc, options)
     hfile.flag_builder = fbuilder
-
 
     list_figures = poptions.get_list_figures()
 
@@ -437,6 +493,7 @@ def plot_from_options(input_path, config_file, output_path_images,sequences_no_d
                 hfile.plot_from_options_impl(options_figure)
 
     return daily_sequences_summary
+
 
 def make_flagged_nc_from_csv(config_file):
     if args.verbose:
@@ -704,7 +761,7 @@ def make_sun_plots(input_path, output_path, site, start_date, end_date, ndw):
                     sun_hours.append(x.strip())
                 except:
                     print(f'[WARNING] {x.strip()} is not a valid sun time in format HH:MM. Using default values')
-            if len(sun_hours)==6:
+            if len(sun_hours) == 6:
                 print(f'[INFO] Sun time hours set to: {sun_hours}')
                 hours = sun_hours
 
@@ -714,13 +771,12 @@ def make_sun_plots(input_path, output_path, site, start_date, end_date, ndw):
                 max_time_diff = float(value) * 60
                 print(f'[INFO] Maximum time difference to select sun images set to: {max_time_diff} minutes')
             except:
-                print(f'[WARNING] {value} is not a valid max. time difference for sun images. Use a numeric value (minutes)')
-
+                print(
+                    f'[WARNING] {value} is not a valid max. time difference for sun images. Use a numeric value (minutes)')
 
     nhours = len(hours)
     sun_images_list = [[''] * ndays] * nhours
     sun_images_time_list = [[''] * ndays] * nhours
-
 
     while work_date <= end_date:
         if args.verbose:
@@ -892,7 +948,24 @@ def make_single_sun(site, sequence, output_path):
     print(f'Completed. File saved: {file_out}')
 
 
+def do_test():
+    dir_base = '/mnt/c/DATA_LUIS/INSITU_HYPSTAR/VEIT/2024/07/31'
+    for name in os.listdir(dir_base):
+        seq_folder = os.path.join(dir_base, name)
+        seq_img = os.path.join(seq_folder, 'image')
+        os.mkdir(seq_img)
+        for nimg in os.listdir(seq_folder):
+            if nimg.endswith('jpg'):
+                forig = os.path.join(seq_folder, nimg)
+                fdest = os.path.join(seq_img, nimg)
+                os.rename(forig, fdest)
+    return True
+
+
 def main():
+    # if do_test():
+    #     return
+
     if args.verbose:
         print('STARTED')
 

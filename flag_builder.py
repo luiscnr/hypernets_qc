@@ -9,8 +9,15 @@ from datetime import datetime as dt
 class FlagBuilder:
 
     def __init__(self, path_mdb_file, options):
-        self.nc_file = path_mdb_file
-        self.VALID = os.path.isfile(path_mdb_file)
+
+        self.path_mdb_file = path_mdb_file
+        self.mfile = None
+        self.VALID = False
+
+        if path_mdb_file is not None and os.path.isfile(path_mdb_file):
+            self.nc_file = path_mdb_file
+            self.VALID = True
+
 
         if not self.VALID:
             print(f'[ERROR] {path_mdb_file} is not a valid  file')
@@ -178,9 +185,6 @@ class FlagBuilder:
 
     def create_flag_array_ranges_v2(self, options_dict):
         dataset = Dataset(self.nc_file)
-        # print('****************************************************************************************************')
-        # print(options_dict)
-        # print('======================================================================================================')
         default_value = options_dict['default_value']
         default_flag = options_dict['default_flag']
         indices_ranges = {}

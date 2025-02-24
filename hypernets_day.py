@@ -29,6 +29,7 @@ class HYPERNETS_DAY:
         self.base_folder = '/waterhypernet/hypstar/processed_v2/'
         self.base_folder_l2_npl = '/home/cnr/'
         self.base_folder_l2_rbins = '/home/hypstar/'
+        self.base_folder_raw_rbins = '/waterhypernet/HYPSTAR/Raw'   #KGR
 
         self.ssh_base = 'ssh -X -Y -p 9022'
         self.ssh_base_npl = 'ssh'
@@ -71,6 +72,9 @@ class HYPERNETS_DAY:
 
         ##check nc files
         for folder_to_check in folders_to_check:
+            if not os.path.exists(folder_to_check):
+                print(f'[WARNING] Folder {folder_to_check} does not exist. Skipping...')
+                continue
             for name in os.listdir(folder_to_check):
                 if name.find('L2A_REF') > 0 and name.endswith('nc'):
                     sequence_ref = name.split('_')[5]
@@ -106,6 +110,9 @@ class HYPERNETS_DAY:
 
         ##check pictures
         for folder_to_check in folders_to_check_images:
+            if not os.path.exists(folder_to_check):
+                print(f'[WARNING] Folder {folder_to_check} does not exist. Skipping...')
+                continue
             for name in os.listdir(folder_to_check):
                 if name.find('IMG') > 0 and name.endswith('jpg'):
                     sequence_ref = name.split('_')[4]
@@ -130,7 +137,10 @@ class HYPERNETS_DAY:
 
     def get_disk_usage_log_file(self,site,ndw):
         file_log = os.path.join(self.path_data, site,f'disk-usage_{site}.log')
+        print("file_log=",file_log)
         if ndw:
+            file_log=f'{self.base_folder_raw_rbins}/{site}/LOGS/disk-usage.log'  # KGR
+            print("file_log=",file_log)
             if os.path.exists(file_log):
                 return file_log
             else:
@@ -193,7 +203,7 @@ class HYPERNETS_DAY:
         path_log = f'{base_folder}/{site}/LOGS/{work_date_str}*{type_log}.log'
         cmd = f'{ssh_base} {url_base} ls {path_log}'
         list_files = self.get_list_files_from_ls_cmd(cmd)
-        return list_files
+        return sorted(list_files)
 
     def get_sun_images_date(self, site, date_here,ndw):
         sun_images = {}
@@ -954,7 +964,7 @@ class HYPERNETS_DAY:
         ssh_path = self.get_ssh_path(site, date_here, None)
         cmd = f'{self.ssh_base} {self.url_base} ls {ssh_path}'
         list_sequences = self.get_list_files_from_ls_cmd(cmd)
-        return list_sequences
+        return sorted(list_sequences)
 
     def get_sequences_date_l2(self, site, date_here):
         base_folder_l2 = self.base_folder_l2_rbins
@@ -971,13 +981,13 @@ class HYPERNETS_DAY:
         list_sequences = self.get_list_files_from_ls_cmd(cmd)
         list_sequences = [x.split('/')[-1] for x in list_sequences]
 
-        return list_sequences
+        return sorted(list_sequences)
 
     def get_sequences_date_from_file_list(self, site, date_here):
         list_sequences = []
         folder_date = self.get_folder_date(site, date_here)
         if folder_date is None:
-            return list_sequences
+            return sorted(list_sequences)
         file_list = os.path.join(folder_date, 'sequence_list.txt')
 
         use_seq_folders = False
@@ -993,7 +1003,7 @@ class HYPERNETS_DAY:
             for name in os.listdir(folder_date):
                 if name.startswith('SEQ') and os.path.isdir(os.path.join(folder_date,name)):
                     list_sequences.append(name)
-        return list_sequences,use_seq_folders
+        return sorted(list_sequences),use_seq_folders
 
     def get_images_sequence(self, site, date_here, sequence_folder):
         ssh_path = self.get_ssh_path(site, date_here, sequence_folder)
@@ -1029,7 +1039,7 @@ class HYPERNETS_DAY:
                 listd.append(l)
             except:
                 pass
-        return listd
+        return sorted(listd)
 
     def save_report_image_only_pictures(self, site, delete_images, overwrite, seq, files_img, input_path_report):
         print(f'[INFO] Sequence {seq} (No Level-2 data available)')

@@ -3,7 +3,7 @@ from datetime import datetime as dt
 from datetime import timedelta
 import numpy as np
 import pandas as pd
-import owncloud
+#import owncloud
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from PIL import Image
@@ -13,6 +13,7 @@ from hypernets_day import HYPERNETS_DAY
 from plot_options import PlotOptions
 from flag_builder import FlagBuilder
 
+print("starting to read arguments")
 parser = argparse.ArgumentParser(description="Creation of insitu nc files")
 parser.add_argument('-m', "--mode",
                     choices=['GETFILES', 'CREATEDAYFILES', 'REPORTDAYFILES', 'SUMMARYFILES', 'NCFROMCSV', 'PLOT',
@@ -33,6 +34,8 @@ parser.add_argument("-ndw", "--nodownload", help="No download (for launching wit
                     action="store_true")
 parser.add_argument("-ow", "--overwrite", help="Overwrite output file(s).", action="store_true")
 parser.add_argument("-v", "--verbose", help="Verbose mode.", action="store_true")
+
+print(parser.parse_args())  # print the arguments
 
 args = parser.parse_args()
 
@@ -126,7 +129,7 @@ def make_report_files(input_path, output_path, site, start_date, end_date):
             else:
                 daily_sequences_summary = plot_from_options(hdayfile, config_file_summary, dir_img_summary,
                                                             sequences_no_data, False)
-                hdayfile.save_report_summary_image(site, work_date, dir_img_summary, daily_sequences_summary)
+                hdayfile.save_report_summary_image(site, work_date, dir_img_summary, daily_sequences_summary, input_path)
 
         delete = False if args.nodelfiles else True
         for seq in sequences_all:
@@ -177,6 +180,8 @@ def make_report_files(input_path, output_path, site, start_date, end_date):
             'file_log_disk_usage': hday.get_disk_usage_log_file(site, True),
             'file_log_last_sequence': hday.get_last_available_log(site, 'sequence', True)
         }
+        print("extra_info: ", extra_info)
+        
         create_daily_mail_file(file_qc_mail, site, start_date, daily_sequences_summary, extra_info)
         print(f'[INFO] PDF file: {file_pdf} --> {os.path.exists(file_pdf)}')
         print(f'[INFO] Owncloud info: {owncloud_info}')

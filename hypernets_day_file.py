@@ -597,7 +597,7 @@ class HYPERNETS_DAY_FILE:
             pm.save_fig(f'{file_out_base}_all{self.format_img}')
             pm.close_plot()
 
-    def save_report_summary_image(self, site, date_here, dir_img_summary, daily_sequences_summary):
+    def save_report_summary_image(self, site, date_here, dir_img_summary, daily_sequences_summary, input_path):
 
         file_out = os.path.join(os.path.dirname(self.file_nc),
                                 f'{site}_{date_here.strftime("%Y%m%d")}_DailySummary{self.format_img}')
@@ -610,7 +610,7 @@ class HYPERNETS_DAY_FILE:
         pmts = PlotMultiple()
         pmts.start_multiple_plot_advanced(2, 1, 3, 3.5, 0, 0, True)
         pmts.plot_image(os.path.join(dir_img_summary, 'time_series_epsilon.tif'), 0, 0)
-        pmts.plot_image(os.path.join(dir_img_summary, 'time_series_r800_nosc.tif'), 1, 0)
+        pmts.plot_image(os.path.join(dir_img_summary, 'time_series_r865_nosc.tif'), 1, 0)
         pmts.save_fig(file_out_ts)
         pmts.close_plot()
 
@@ -621,7 +621,8 @@ class HYPERNETS_DAY_FILE:
         pmtop.plot_image(os.path.join(dir_img_summary, 'sequence_info.tif'), 0, 0)
         pmtop.plot_image(os.path.join(dir_img_summary, 'flag_plot.tif'), 0, 1)
         pmtop.plot_image(file_out_ts, 0, 2)
-        pmtop.set_text(-1250, 50, f'DAILY SUMMARY REPORT - {date_here.strftime("%Y-%m-%d")}')
+        pmtop.set_text(-1250, 50, f'DAILY SUMMARY REPORT - {date_here.strftime("%Y-%m-%d")} - {site}')
+        pmtop.set_text(-1250,110, f'Data from {input_path}')
 
         line = f'Total sequences: {daily_sequences_summary["NTotal"]}/{daily_sequences_summary["expected_sequences"]}. Processed to L2: {daily_sequences_summary["NAvailable"]}.'
         skip = ['NTotal', 'NAvailable', 'start_time', 'end_time', 'expected_sequences']
@@ -638,12 +639,12 @@ class HYPERNETS_DAY_FILE:
         file_out_middle = os.path.join(dir_img_summary, f'MIDDLE{self.format_img}')
         pmmiddle = PlotMultiple()
         pmmiddle.start_multiple_plot_advanced(2, 3, 10, 6, 0, 0, True)
-        pmmiddle.plot_image(os.path.join(dir_img_summary, 'angle_800_nosc_sza.tif'), 0, 0)
-        pmmiddle.plot_image(os.path.join(dir_img_summary, 'angle_800_nosc_saa.tif'), 0, 1)
-        pmmiddle.plot_image(os.path.join(dir_img_summary, 'angle_800_nosc_paa.tif'), 0, 2)
-        pmmiddle.plot_image(os.path.join(dir_img_summary, 'angle_800_sza.tif'), 1, 0)
-        pmmiddle.plot_image(os.path.join(dir_img_summary, 'angle_800_saa.tif'), 1, 1)
-        pmmiddle.plot_image(os.path.join(dir_img_summary, 'angle_800_paa.tif'), 1, 2)
+        pmmiddle.plot_image(os.path.join(dir_img_summary, 'angle_865_nosc_sza.tif'), 0, 0)
+        pmmiddle.plot_image(os.path.join(dir_img_summary, 'angle_865_nosc_saa.tif'), 0, 1)
+        pmmiddle.plot_image(os.path.join(dir_img_summary, 'angle_865_nosc_paa.tif'), 0, 2)
+        pmmiddle.plot_image(os.path.join(dir_img_summary, 'angle_865_sza.tif'), 1, 0)
+        pmmiddle.plot_image(os.path.join(dir_img_summary, 'angle_865_saa.tif'), 1, 1)
+        pmmiddle.plot_image(os.path.join(dir_img_summary, 'angle_865_paa.tif'), 1, 2)
         pmmiddle.save_fig(file_out_middle)
         pmmiddle.close_plot()
 

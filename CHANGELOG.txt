@@ -1,0 +1,59 @@
+CHANGELOG
+---------
+
+5 June 2024
+Author: Luis
+
+First commit
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+7 June 2024: 
+Author: Luis
+
+Updated hypernets_qc for RBINS implementation #1
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+9 July 2024
+Author: Luis
+
+Added sequence reports without L2 data (only pictures) and improved flagging and e-mail information
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+2 August 2024
+Author: Luis
+
+Corrected minor bugs, added requirements in README, added test land QC for JSIT
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+24 February 2025
+Author: Kevin
+
+1. adding input_path to DAILY SUMMARY REPORT to clarify which processor generated the L2A data used in the report (e.g. NRT or production processors)
+
+2. Changing wavelength of all output plots from 800 nm to 865 nm to facilitate comparison with other data sources, e.g. AERONET-OC. While reference wavelength (wlref) is variable in the config files, it is hardcoded in the output image names, e.g. angle_800_paa.tif
+
+3. self.base_folder_raw_rbins added since L2A may come from different processors (directories) but raw data has only one source.
+
+4. Error handling improved when directories do not exist
+
+5. All lists of files returned as sorted because some linux systems (enhydra) do not return alphabetically sorted files, see https://stackoverflow.com/questions/4813061/non-alphanumeric-list-order-from-os-listdir
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+25 February 2025
+Author: Luis
+
+1. Corrected issue affecting days without l2 sequences (function set_netcdf_data in hypernets_day.py).
+
+2. Replaced the following names of functions and variables throughtout the code in hypernets_day.py: 
+base_folder_l2_rbins by base_folder_raw_rbins
+base_folder_l2_npl by base_folder_raw_npl
+get_ssh_path_l2() by get_ssh_path_raw()
+get_sequences_date_l2() by get_sequences_date_raw()
+
+3.Updated get_last_available_log() and get_disk_usage_log_file() in  hypernets_day.py to adapt these functions to RBINS implementation. 
+
+4. Added variable raw_folder_organization and function set_raw_data_organization() to change its value in hypernets_day.py.  This variable takes two possible values to consider the organization of the raw directory: NONE (DATA/SEQ-) or YYYYMMDD (YYYY/MM/DD/SEQ-). By default, it's set to YYYYMMDD. This variable is only used in the function get_sun_images_date() [with ssh download option (ndw==False), only relevant for CNR implementation]
+
+5. Added function check_use_seq_folders()  in hypernets_day.py to make easier to check if we're using CNR (without SEQ folders) or RBINS (with SEQ folders) implementation. 
+
+6. Added the site in the first line of daily summary report. 

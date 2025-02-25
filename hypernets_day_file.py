@@ -298,8 +298,8 @@ class HYPERNETS_DAY_FILE:
         valid_sequences[valid_sequences > 0] = 1
         epsilon_array = dataset.variables['l2_epsilon'][:].astype(np.float64)
         epsilon_array = np.ma.filled(epsilon_array, -999.0)
-        valid_sequences[np.logical_and(valid_sequences == 0, epsilon_array < (-0.05))] = 2
-        valid_sequences[np.logical_and(valid_sequences == 0, epsilon_array >= 0.05)] = 3
+        valid_sequences[np.logical_and(valid_sequences == 0, epsilon_array < (-0.005))] = 2
+        valid_sequences[np.logical_and(valid_sequences == 0, epsilon_array >= 0.005)] = 3
         self.valid_sequences = valid_sequences
         dataset.close()
 
@@ -313,8 +313,8 @@ class HYPERNETS_DAY_FILE:
         list, mask = cflags.Decode(flag_value)
         epsilon_here = dataset.variables['l2_epsilon'][self.isequence]
         if not np.ma.is_masked(epsilon_here):
-            if epsilon_here < (-0.05): list.append('ENEG')
-            if epsilon_here >= 0.05: list.append('EHIGH')
+            if epsilon_here < (-0.005): list.append('ENEG')
+            if epsilon_here >= 0.005: list.append('EHIGH')
         dataset.close()
         return list
 
@@ -621,8 +621,8 @@ class HYPERNETS_DAY_FILE:
         pmtop.plot_image(os.path.join(dir_img_summary, 'sequence_info.tif'), 0, 0)
         pmtop.plot_image(os.path.join(dir_img_summary, 'flag_plot.tif'), 0, 1)
         pmtop.plot_image(file_out_ts, 0, 2)
-        pmtop.set_text(-1250, 50, f'DAILY SUMMARY REPORT - {date_here.strftime("%Y-%m-%d")} - {site}')
-        pmtop.set_text(-1250,110, f'Data from {input_path}')
+        pmtop.set_text(-1250, 40, f'DAILY SUMMARY REPORT - {site} - {date_here.strftime("%Y-%m-%d")}')
+        pmtop.set_text(-1250,100, f'Data from {input_path}')
 
         line = f'Total sequences: {daily_sequences_summary["NTotal"]}/{daily_sequences_summary["expected_sequences"]}. Processed to L2: {daily_sequences_summary["NAvailable"]}.'
         skip = ['NTotal', 'NAvailable', 'start_time', 'end_time', 'expected_sequences']

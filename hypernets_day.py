@@ -6,6 +6,7 @@ from plot_multiple import PlotMultiple
 from hypernets_day_file import HYPERNETS_DAY_FILE
 from hypernets_day_file_land import HYPERNETS_DAY_FILE_LAND
 
+
 class HYPERNETS_DAY:
 
     def __init__(self, path_data, path_output):
@@ -23,13 +24,11 @@ class HYPERNETS_DAY:
         print(f'[INFO] ->Input path data: {self.path_data}')
         print(f'[INFO] ->Output path data: {self.path_output}')
 
-        rsync_user = 'hypstar'
-        self.url_base = f'{rsync_user}@enhydra.naturalsciences.be'
+        self.url_base = f'hypstar@enhydra.naturalsciences.be'
         self.url_base_npl = f'cnr@hypernetssvr1.npl.co.uk'
         self.base_folder = '/waterhypernet/hypstar/processed_v2/'
-        self.base_folder_l2_npl = '/home/cnr/'
-        self.base_folder_l2_rbins = '/home/hypstar/'
-        self.base_folder_raw_rbins = '/waterhypernet/HYPSTAR/Raw'   #KGR
+        self.base_folder_raw_npl = '/home/cnr/'
+        self.base_folder_raw_rbins = '/waterhypernet/HYPSTAR/Raw'  # KGR
 
         self.ssh_base = 'ssh -X -Y -p 9022'
         self.ssh_base_npl = 'ssh'
@@ -46,6 +45,8 @@ class HYPERNETS_DAY:
         self.rgb_oaa = [90, 90, 90, 90, 90, 0]
         self.rgb_pictures_names = ['sky_irr_1', 'sky_rad_1', 'water_rad', 'sky_rad_2', 'sky_irr_2', 'sun']
 
+        self.raw_folder_organization = 'YYYYMMDD'
+
     def get_files_date_nodownload(self, site, date_here):
 
         self.files_dates = {}
@@ -54,19 +55,18 @@ class HYPERNETS_DAY:
             return
 
         ##list_sequences is obtained from sequence_list.txt (CNR) or sequence folders (RBINS)
-        list_sequences,use_seq_folders = self.get_sequences_date_from_file_list(site, date_here)
+        use_seq_folders = self.check_use_seq_folders(site, date_here)
+        list_sequences = self.get_sequences_date_from_file_list(site, date_here)
 
         if len(list_sequences) == 0:
             print(f'[WARNING] No sequences found for date: {date_here}')
             return
         list_seq_refs = [x[3:-2] for x in list_sequences]
 
-
-
-        if use_seq_folders: ##rbins, files organized in sequence folders
-            folders_to_check = [os.path.join(date_folder,seq) for seq in list_sequences]
-            folders_to_check_images = [os.path.join(x,'image') for x in folders_to_check]
-        else: ##cnr, files in the same folder
+        if use_seq_folders:  ##rbins, files organized in sequence folders
+            folders_to_check = [os.path.join(date_folder, seq) for seq in list_sequences]
+            folders_to_check_images = [os.path.join(x, 'image') for x in folders_to_check]
+        else:  ##cnr, files in the same folder
             folders_to_check = [date_folder]
             folders_to_check_images = [date_folder]
 
@@ -135,77 +135,97 @@ class HYPERNETS_DAY:
                     except:
                         pass
 
-    def get_disk_usage_log_file(self,site,ndw):
-        file_log = os.path.join(self.path_data, site,f'disk-usage_{site}.log')
-        print("file_log=",file_log)
+    def get_disk_usage_log_file(self, site, ndw):
+        file_log = os.path.join(self.path_data, site, f'disk-usage_{site}.log')  ##CNR Implementation
+        if not os.path.exists(file_log):  ##RBINS Implementation
+            if site == 'JSIT':
+                file_log = f'{self.base_folder_raw_npl}/{site}/LOGS/disk-usage.log'
+            else:
+                file_log = f'{self.base_folder_raw_rbins}/{site}/LOGS/disk-usage.log'  ##KGR
+        print("file_log=", file_log)
         if ndw:
-            file_log=f'{self.base_folder_raw_rbins}/{site}/LOGS/disk-usage.log'  # KGR
-            print("file_log=",file_log)
             if os.path.exists(file_log):
                 return file_log
             else:
                 return None
+        ##ndw (no download) option is only false for testing#############################################
         if site == 'JSIT':
-            path_log = f'{self.base_folder_l2_npl}/{site}/LOGS/disk-usage.log'
+            path_log = f'{self.base_folder_raw_npl}/{site}/LOGS/disk-usage.log'
             self.transfer_file_ssh_npl(path_log, file_log)
         else:
-            path_log=f'{self.base_folder_l2_rbins}/{site}/LOGS/disk-usage.log'
+            path_log = f'{self.base_folder_raw_rbins}/{site}/LOGS/disk-usage.log'
             self.transfer_file_ssh(path_log, file_log)
         if os.path.exists(file_log):
             return file_log
         else:
             return None
 
-    def get_last_available_log(self,site,type_log,ndw):
-        file_log = os.path.join(self.path_data, site, f'last_{type_log}_{site}.log')
-        if ndw:
+    def get_last_available_log(self, site, type_log, ndw):
+        file_log = os.path.join(self.path_data, site, f'last_{type_log}_{site}.log')  ##CNR IMPLEMENTATION
+        if not os.path.exists(file_log):  ##RBINS IMPLEMENTATION
+            list_files = self.get_list_log_files_date(dt.now(), site, type_log)  # check same day
+            if len(list_files) == 0:  ##check day before
+                list_files = self.get_list_log_files_date(dt.now() - timedelta(hours=24), site, type_log)
+            if len(list_files) > 0:
+                file_log = self.get_last_log_file_from_list(list_files)
+
+        if ndw:  ##OPERATIONAL IMPLEMENENTATION
             if os.path.exists(file_log):
                 return file_log
             else:
                 return None
 
-        list_files = self.get_list_log_files_date(dt.now(),site,type_log)
-        if len(list_files)==0: list_files = self.get_list_log_files_date(dt.now()-timedelta(hours=24),site,type_log)
-        if len(list_files)==0:
+        ##Testing uisng ndw==False, to download file logs using ssh (only CNR IMPLEMENTATION)
+        list_files = self.get_list_log_files_date(dt.now(), site, type_log)
+        if len(list_files) == 0: list_files = self.get_list_log_files_date(dt.now() - timedelta(hours=24), site,
+                                                                           type_log)
+        if len(list_files) == 0:
             print(f'[WARNING]{type_log} log for {site} was not found in the last 2 days')
             return None
-        date_ref = dt.now()-timedelta(days=3)
-        file_server_last = None
-        for name in list_files:
-            try:
-                date_file = dt.strptime(name.split('/')[-1][:15],'%Y-%m-%d-%H%M')
-                if date_file>date_ref:
-                    file_server_last = name
-                    date_ref = date_file
-            except:
-                pass
-
-
-        if site=='JSIT':
-            self.transfer_file_ssh_npl(file_server_last,file_log)
-        else:
-            self.transfer_file_ssh(file_server_last, file_log)
+        file_server_last = self.get_last_log_file_from_list(list_files)
+        if file_server_last is not None:
+            if site == 'JSIT':
+                self.transfer_file_ssh_npl(file_server_last, file_log)
+            else:
+                self.transfer_file_ssh(file_server_last, file_log)
         if os.path.exists(file_log):
             return file_log
         else:
             return None
 
-    #type_log: hello, access, webcam, sequence
-    def get_list_log_files_date(self,work_date,site,type_log):
+    def get_last_log_file_from_list(self, list_files):
+        date_ref = dt(2020, 1, 1)
+        file_server_last = None
+        for name in list_files:
+            try:
+                date_file = dt.strptime(name.split('/')[-1][:15], '%Y-%m-%d-%H%M')
+                if date_file > date_ref:
+                    file_server_last = name
+                    date_ref = date_file
+            except:
+                pass
+        return file_server_last
+
+    # type_log: hello, access, webcam, sequence
+    def get_list_log_files_date(self, work_date, site, type_log):
         url_base = self.url_base
         ssh_base = self.ssh_base
-        base_folder = self.base_folder_l2_rbins
+        base_folder = self.base_folder_raw_rbins
         if site == 'JSIT':
             url_base = self.url_base_npl
             ssh_base = self.ssh_base_npl
-            base_folder = self.base_folder_l2_npl
+            base_folder = self.base_folder_raw_npl
         work_date_str = work_date.strftime('%Y-%m-%d')
+        log_folder = os.path.join(base_folder, site, 'LOGS')
         path_log = f'{base_folder}/{site}/LOGS/{work_date_str}*{type_log}.log'
-        cmd = f'{ssh_base} {url_base} ls {path_log}'
+        if os.path.isdir(log_folder):
+            cmd = f'ls {path_log}'
+        else:
+            cmd = f'{ssh_base} {url_base} ls {path_log}'
         list_files = self.get_list_files_from_ls_cmd(cmd)
         return sorted(list_files)
 
-    def get_sun_images_date(self, site, date_here,ndw):
+    def get_sun_images_date(self, site, date_here, ndw):
         sun_images = {}
 
         date_folder = self.get_folder_date(site, date_here)
@@ -216,16 +236,16 @@ class HYPERNETS_DAY:
                     sun_images[seq] = os.path.join(date_folder, name)
                 ##checking sun images also in is SEQ*FOLDERS
                 if name.startswith('SEQ'):
-                    folder_seq = os.path.join(date_folder,name,'image')
+                    folder_seq = os.path.join(date_folder, name, 'image')
                     if os.path.isdir(folder_seq):
                         for name_s in os.listdir(folder_seq):
                             if name_s.find('_0_0') > 0 and name_s.endswith('.jpg'):
                                 seq = f'{name_s.split("_")[4]}00'
                                 sun_images[seq] = os.path.join(folder_seq, name)
-
-
         if ndw:
             return sun_images
+
+        ##download via ssh, only relevant for CNR implementation
 
         if date_folder is None:
             path_site = os.path.join(self.path_data, site)
@@ -239,61 +259,65 @@ class HYPERNETS_DAY:
             date_folder = path_day
 
         if site == 'JSIT':
-            list_sequences = self.get_sequences_date_l2(site, date_here)
+            list_sequences = self.get_sequences_date_raw(site, date_here)
         else:
             list_sequences = self.get_sequences_date(site, date_here)
             if len(list_sequences) == 0:
-                list_sequences = self.get_sequences_date_l2(site, date_here)
+                list_sequences = self.get_sequences_date_raw(site, date_here)
 
         if len(list_sequences) == 0:
             print(f'[WARNING] No sequences found for date: {date_here}')
             return
 
+        date_folder_raw = None
+        if self.raw_folder_organization == 'YYYYMMDD':
+            date_folder_raw = f'{date_here.strftime("%Y")}/{date_here.strftime("%m")}/{date_here.strftime("%d")}'
+
         for seq in list_sequences:
             print(f'[INFO] Checking sun picture in sequence: {seq}')
             # seq_time =  dt.strptime(seq[3:], '%Y%m%dT%H%M%S').replace(tzinfo=pytz.UTC)
-            files_sun = self.get_sun_image_sequence(site, seq)
+            files_sun = self.get_sun_image_sequence(site, date_folder_raw, seq)
 
             if len(files_sun) == 1:
                 name_file = files_sun[0].split('/')[-1]
                 file_sun = os.path.join(date_folder, name_file)
                 if not os.path.exists(file_sun):
-                    if site=='JSIT':
-                        self.transfer_file_ssh_npl(files_sun[0],file_sun)
+                    if site == 'JSIT':
+                        self.transfer_file_ssh_npl(files_sun[0], file_sun)
                     else:
                         self.transfer_file_ssh(files_sun[0], file_sun)
                 if os.path.exists(file_sun):
-                    name_new = self.get_name_new_file_sun(file_sun,site,seq)
-                    file_sun_new = os.path.join(date_folder,name_new)
-                    os.rename(file_sun,file_sun_new)
+                    name_new = self.get_name_new_file_sun(file_sun, site, seq)
+                    file_sun_new = os.path.join(date_folder, name_new)
+                    os.rename(file_sun, file_sun_new)
                     sun_images[seq[3:]] = file_sun_new
                 else:
                     sun_images[seq[3:]] = None
 
         return sun_images
 
-    def get_name_new_file_sun(self,file_img,site,seq):
+    def get_name_new_file_sun(self, file_img, site, seq):
         type = 'W'
         picture = '016'
-        if site=='JSIT':
+        if site == 'JSIT':
             type = 'L'
             picture = '090'
-        date_img =  dt.fromtimestamp(os.path.getmtime(file_img))
+        date_img = dt.fromtimestamp(os.path.getmtime(file_img))
         date_img_str = date_img.strftime('%Y%m%dT%H%M')
         name_new = f'HYPTERNETS_{type}_{site}_IMG_{seq[3:-2]}_{date_img_str}_{picture}_0_0_v2.0.jpg'
         return name_new
 
-    def get_sequences_info(self,site,date_here,sequences_with_data,sequences_abs_range):
+    def get_sequences_info(self, site, date_here, sequences_with_data, sequences_abs_range):
 
-        all_sequences,use_seq_folders = self.get_sequences_date_from_file_list(site,date_here)
+        all_sequences = self.get_sequences_date_from_file_list(site, date_here)
 
-        all_sequences = [x[:-2] for x  in all_sequences]
+        all_sequences = [x[:-2] for x in all_sequences]
 
         if sequences_abs_range is not None:
             all_sequences_orig = all_sequences.copy()
             all_sequences = []
             for seq in all_sequences_orig:
-                date_here = dt.strptime(seq[3:],'%Y%m%dT%H%M').replace(tzinfo=pytz.utc).timestamp()
+                date_here = dt.strptime(seq[3:], '%Y%m%dT%H%M').replace(tzinfo=pytz.utc).timestamp()
                 if sequences_abs_range[0] <= date_here <= sequences_abs_range[1]:
                     all_sequences.append(seq)
 
@@ -304,12 +328,11 @@ class HYPERNETS_DAY:
         for seq in all_sequences:
             if seq not in sequences_with_data:
                 sequences_without_data.append(seq)
-                all_sequences_info[seq]=-1
+                all_sequences_info[seq] = -1
             else:
-                all_sequences_info[seq]=sequences_with_data.index(seq)
+                all_sequences_info[seq] = sequences_with_data.index(seq)
 
-        return sequences_without_data,all_sequences_info
-
+        return sequences_without_data, all_sequences_info
 
     def get_files_date(self, site, date_here):
         self.files_dates = {}
@@ -350,14 +373,12 @@ class HYPERNETS_DAY:
                     print(f'[INFO] --> File {name_l1} was not found. Launching download...')
                     self.transfer_file_ssh(f'{ssh_path}/{name_l1}', file_l1)
 
-    def save_sun_images(self, output_file, sun_images,time_list):
+    def save_sun_images(self, output_file, sun_images, time_list):
         pm = PlotMultiple()
         nrow = len(sun_images)
         ncol = len(sun_images[0])
         xfigsize = 2.2 * ncol
         yfigsize = 2.7 * nrow
-
-
 
         pm.start_multiple_plot_advanced(nrow, ncol, xfigsize, yfigsize, 0, 0.15, True)
         for irow in range(nrow):
@@ -396,53 +417,58 @@ class HYPERNETS_DAY:
 
         return file_date
 
-    def get_files_img_for_sequences_no_data(self,site,date_here,seq):
+    def get_files_img_for_sequences_no_data(self, site, date_here, seq, use_seq_folders):
         files_img = {}
-        for name_img,ref in zip(self.rgb_pictures_names,self.rgb_refs):
-            files_img[ref]={
+        for name_img, ref in zip(self.rgb_pictures_names, self.rgb_refs):
+            files_img[ref] = {
                 'name_img': name_img,
                 'file_img': None
             }
         date_folder = self.get_folder_date(site, date_here)
         if date_folder is None:
             return
-        seq_ref = seq.replace('SEQ','IMG_')
-        #print('--------------------------------------->',seq)
+
+        if use_seq_folders:
+            for name in os.listdir(date_folder):
+                if name.startswith(seq):
+                    date_folder = os.path.join(date_folder, name, 'image')
+                    break
+
+        seq_ref = seq.replace('SEQ', 'IMG_')
         for name in os.listdir(date_folder):
-            #print(name,seq_ref)
-            if name.endswith('.jpg') and name.find(seq_ref)>0:
+            if name.endswith('.jpg') and name.find(seq_ref) > 0:
                 name_s = name.split('_')
                 ref = name_s[6]
                 if ref not in files_img.keys():
                     continue
-                files_img[ref]['file_img'] = os.path.join(date_folder,name)
+                files_img[ref]['file_img'] = os.path.join(date_folder, name)
         return files_img
 
+    def get_sequence_range(self, date_here, config_file_summary, absolute):
 
-    def get_sequence_range(self, date_here,config_file_summary,absolute):
-
-        #from datetime import datetime as dt
+        # from datetime import datetime as dt
         options = configparser.ConfigParser()
         options.read(config_file_summary)
 
-        if options.has_option('sequence_info','start_time') and options.has_option('sequence_info','end_time'):
+        if options.has_option('sequence_info', 'start_time') and options.has_option('sequence_info', 'end_time'):
             start_time_str = options['sequence_info']['start_time']
             end_time_str = options['sequence_info']['end_time']
             frequency = 30
-            if options.has_option('sequence_info','frequency'):
+            if options.has_option('sequence_info', 'frequency'):
                 try:
                     frequency = int(options['sequence_info']['frequency'])
                 except:
                     pass
 
             try:
-                start_time = dt.strptime(f'{date_here.strftime("%Y-%m-%d")}T{start_time_str}','%Y-%m-%dT%H:%M')
+                start_time = dt.strptime(f'{date_here.strftime("%Y-%m-%d")}T{start_time_str}', '%Y-%m-%dT%H:%M')
                 end_time = dt.strptime(f'{date_here.strftime("%Y-%m-%d")}T{end_time_str}', '%Y-%m-%dT%H:%M')
-                frequency_seconds = frequency*60
-                nsequences = ((end_time.timestamp()-start_time.timestamp())/frequency_seconds)+1
+                frequency_seconds = frequency * 60
+                nsequences = ((end_time.timestamp() - start_time.timestamp()) / frequency_seconds) + 1
                 if absolute:
                     end_time = end_time + timedelta(minutes=frequency)
-                range = [start_time.replace(tzinfo=pytz.UTC).timestamp(),end_time.replace(tzinfo=pytz.UTC).timestamp(),int(nsequences)]
+                range = [start_time.replace(tzinfo=pytz.UTC).timestamp(), end_time.replace(tzinfo=pytz.UTC).timestamp(),
+                         int(nsequences)]
                 return range
             except:
                 return None
@@ -538,7 +564,6 @@ class HYPERNETS_DAY:
 
     def start_file_date_complete(self, site, date_here, overwrite):
 
-
         file_date = self.get_file_date_complete(site, date_here)
         if file_date is None:
             print(f'[WARNING] Date folder for {site} and {date_here} is not avaiable. Skipping...')
@@ -580,8 +605,7 @@ class HYPERNETS_DAY:
         self.dataset_w.createDimension('scan', dims['scan'])
         self.dataset_w.createDimension('wavelength', dims['wavelength'])
 
-        ##rgb variables
-        print(f'[INFO] Creating image variables...')
+
         ##rgb variables
         print(f'[INFO] Creating image variables...')
         # self.rgb_refs = ['003', '006', '009', '012', '015', '016']
@@ -652,6 +676,7 @@ class HYPERNETS_DAY:
 
         seq_list = list(self.files_dates.keys())
         seq_list.sort()
+        index_add = -1
         for idx in range(len(seq_list)):
             seq = seq_list[idx]
             if not self.files_dates[seq]['valid']:
@@ -666,6 +691,7 @@ class HYPERNETS_DAY:
                 continue
             print(f'[INFO] Set level{level} data for sequence {seq}')
             dataset = Dataset(file)
+            index_add = index_add + 1
             for var_name in dataset.variables:
                 if var_name.startswith('u_rel') or var_name.startswith('err'):
                     continue
@@ -676,14 +702,14 @@ class HYPERNETS_DAY:
                 ndim = len(dimensions)
                 if level == 1:
                     if ndim == 2:
-                        self.dataset_w.variables[var_name_new][idx, :] = dataset.variables[var_name][:]
+                        self.dataset_w.variables[var_name_new][index_add, :] = dataset.variables[var_name][:]
                     elif ndim == 3:
-                        self.dataset_w.variables[var_name_new][idx, :, :] = dataset.variables[var_name][:, :]
+                        self.dataset_w.variables[var_name_new][index_add, :, :] = dataset.variables[var_name][:, :]
                 if level == 2:
                     if ndim == 1 and dimensions[0] == 'series':
-                        self.dataset_w.variables[var_name_new][idx] = dataset.variables[var_name][0]
+                        self.dataset_w.variables[var_name_new][index_add] = dataset.variables[var_name][0]
                     if ndim == 2 and dimensions[0] == 'series':
-                        self.dataset_w.variables[var_name_new][idx, :] = dataset.variables[var_name][:, 0]
+                        self.dataset_w.variables[var_name_new][index_add, :] = dataset.variables[var_name][:, 0]
 
             dataset.close()
 
@@ -722,7 +748,20 @@ class HYPERNETS_DAY:
 
             dataset.close()
 
-    def set_rgb_refs(self,config_file_summary):
+    def set_raw_data_organization(self, config_file_summary):
+        options = configparser.ConfigParser()
+        options.read(config_file_summary)
+        if options.has_option('GLOBAL_OPTIONS', 'raw_data_organization'):
+            values = ['NONE', 'YYYYMMDD']
+            new_value = options['GLOBAL_OPTIONS']['raw_data_organization'].strip().upper()
+            if new_value in values:
+                self.raw_folder_organization = new_value
+            else:
+                print(
+                    f'[WARNING] Option {new_value} in not valid for raw_folder_organization. Plese use of the following values {values}')
+                print(f'[WARNING] Default value {self.raw_folder_organization} will be used')
+
+    def set_rgb_refs(self, config_file_summary):
         options = configparser.ConfigParser()
         options.read(config_file_summary)
         if options.has_option('GLOBAL_OPTIONS', 'rgb_refs'):
@@ -939,10 +978,9 @@ class HYPERNETS_DAY:
         if not os.path.exists(folder):
             try:
                 os.mkdir(folder)
-                os.chmod(folder,0o775)
+                os.chmod(folder, 0o775)
             except:
                 print(f'[ERROR] Error creating folder: {folder}')
-
 
     def get_ssh_path(self, site, date_here, sequence_folder):
         year_str = date_here.strftime('%Y')
@@ -953,11 +991,14 @@ class HYPERNETS_DAY:
             path = f'{path}/{sequence_folder}'
         return path
 
-    def get_ssh_path_l2(self, site, sequence_folder):
-        base_folder_l2 = self.base_folder_l2_rbins
+    def get_ssh_path_raw(self, site, date_folder, sequence_folder):
+        raw_folder = self.base_folder_raw_rbins
         if site == 'JSIT':
-            base_folder_l2 = self.base_folder_l2_npl
-        path = f'{base_folder_l2}{site}/DATA/{sequence_folder}'
+            raw_folder = self.base_folder_raw_npl
+        if date_folder is None:
+            path = f'{raw_folder}{site}/DATA/{sequence_folder}'
+        else:
+            path = f'{raw_folder}{site}/DATA/{date_folder}/{sequence_folder}'
         return path
 
     def get_sequences_date(self, site, date_here):
@@ -966,15 +1007,15 @@ class HYPERNETS_DAY:
         list_sequences = self.get_list_files_from_ls_cmd(cmd)
         return sorted(list_sequences)
 
-    def get_sequences_date_l2(self, site, date_here):
-        base_folder_l2 = self.base_folder_l2_rbins
+    def get_sequences_date_raw(self, site, date_here):
+        raw_folder = self.base_folder_raw_rbins
         url_base = self.url_base
         ssh_base = self.ssh_base
         if site == 'JSIT':
-            base_folder_l2 = self.base_folder_l2_npl
+            raw_folder = self.base_folder_raw_npl
             url_base = self.url_base_npl
             ssh_base = self.ssh_base_npl
-        path_search = f'{base_folder_l2}{site}/DATA/SEQ{date_here.strftime("%Y%m%d")}*'
+        path_search = f'{raw_folder}{site}/DATA/SEQ{date_here.strftime("%Y%m%d")}*'
 
         cmd = f'{ssh_base} {url_base} ls -d {path_search}'
 
@@ -983,27 +1024,34 @@ class HYPERNETS_DAY:
 
         return sorted(list_sequences)
 
+    def check_use_seq_folders(self, site, date_here):
+        folder_date = self.get_folder_date(site, date_here)
+        if folder_date is None:
+            return None
+        file_list = os.path.join(folder_date, 'sequence_list.txt')
+        use_seq_folder = False if os.path.exists(file_list) else True
+        return use_seq_folder
+
     def get_sequences_date_from_file_list(self, site, date_here):
         list_sequences = []
         folder_date = self.get_folder_date(site, date_here)
         if folder_date is None:
             return sorted(list_sequences)
         file_list = os.path.join(folder_date, 'sequence_list.txt')
-
-        use_seq_folders = False
-        if os.path.exists(file_list): ##CNR
+        if os.path.exists(file_list):  ##CNR
             f1 = open(file_list, 'r')
             for line in f1:
                 if len(line) > 0:
                     list_sequences.append(line.strip())
             f1.close()
             list_sequences.sort()
-        else: #RBINS
-            use_seq_folders = True
+        else:  # RBINS
             for name in os.listdir(folder_date):
-                if name.startswith('SEQ') and os.path.isdir(os.path.join(folder_date,name)):
+                if name.startswith('SEQ') and os.path.isdir(os.path.join(folder_date, name)):
                     list_sequences.append(name)
-        return sorted(list_sequences),use_seq_folders
+            list_sequences.sort()
+
+        return sorted(list_sequences)
 
     def get_images_sequence(self, site, date_here, sequence_folder):
         ssh_path = self.get_ssh_path(site, date_here, sequence_folder)
@@ -1012,13 +1060,13 @@ class HYPERNETS_DAY:
         list_images = self.get_list_files_from_ls_cmd(cmd)
         return list_images
 
-    def get_sun_image_sequence(self, site, sequence_folder):
+    def get_sun_image_sequence(self, site, date_folder, sequence_folder):
         url_base = self.url_base
         ssh_base = self.ssh_base
         if site == 'JSIT':
             url_base = self.url_base_npl
             ssh_base = self.ssh_base_npl
-        ssh_path = self.get_ssh_path_l2(site, sequence_folder)
+        ssh_path = self.get_ssh_path_raw(site, date_folder, sequence_folder)
 
         path_image = f'{ssh_path}/RADIOMETER/*_0000_0_0000.jpg'
 

@@ -71,12 +71,17 @@ def make_report_files(input_path, output_path, site, start_date, end_date):
                 f'[INFO] Absolute sequence range: {dt.utcfromtimestamp(sequence_abs_range[0]).strftime("%Y-%m-%d %H:%M")}-{dt.utcfromtimestamp(sequence_abs_range[1]).strftime("%Y-%m-%d %H:%M")}')
 
         hdayfile = hday.get_hypernets_day_file(site, work_date)
-        if hdayfile is None:
-            sequences_all = hday.get_sequences_date_from_file_list(site, work_date)
-            sequences_all = [x[:-2] if len(x) == 18 else x for x in sequences_all]
+        use_seq_folders = hday.check_use_seq_folders(site, work_date)
+        if use_seq_folders is None:##no data folder
+            sequences_all = []
             sequences_no_data = sequences_all
         else:
-            sequences_no_data, sequences_all = hday.get_sequences_info(site, work_date, hdayfile.get_sequences(),
+            if hdayfile is None:
+                sequences_all = hday.get_sequences_date_from_file_list(site, work_date)
+                sequences_all = [x[:-2] if len(x) == 18 else x for x in sequences_all]
+                sequences_no_data = sequences_all
+            else:
+                sequences_no_data, sequences_all = hday.get_sequences_info(site, work_date, hdayfile.get_sequences(),
                                                                        sequence_abs_range)
 
         print(f'[INFO] Total number of sequences with folders: {len(sequences_all)}')
@@ -96,7 +101,7 @@ def make_report_files(input_path, output_path, site, start_date, end_date):
             for seq in sequences_all:
                 if os.path.exists(config_file_summary):
                     hday.set_rgb_refs(config_file_summary)
-                files_img = hday.get_files_img_for_sequences_no_data(site, work_date, seq)
+                files_img = hday.get_files_img_for_sequences_no_data(site, work_date, seq, use_seq_folders)
                 hday.save_report_image_only_pictures(site, delete, args.overwrite, seq, files_img, output_folder_date)
             sequence_range = hday.get_sequence_range(work_date, config_file_summary, False)
             daily_sequences_summary = {
@@ -139,7 +144,7 @@ def make_report_files(input_path, output_path, site, start_date, end_date):
                 hdayfile.save_report_image(site, delete, args.overwrite)
             else:
                 hday.set_rgb_refs(config_file_summary)
-                files_img = hday.get_files_img_for_sequences_no_data(site, work_date, seq)
+                files_img = hday.get_files_img_for_sequences_no_data(site, work_date, seq,use_seq_folders)
                 hdayfile.save_report_image_only_pictures(site, delete, args.overwrite, seq, files_img)
 
         create_daily_pdf_report(input_path, output_path, site, work_date, file_summary, sequences_all)
@@ -178,7 +183,7 @@ def make_report_files(input_path, output_path, site, start_date, end_date):
             'file_pdf': file_pdf,
             'public_link': public_link,
             'file_log_disk_usage': hday.get_disk_usage_log_file(site, True),
-            'file_log_last_sequence': hday.get_last_available_log(site, 'sequence', True)
+            'file_log_last_sequence': None#hday.get_last_available_log(site, 'sequence', True)
         }
         print("extra_info: ", extra_info)
         
@@ -186,6 +191,7 @@ def make_report_files(input_path, output_path, site, start_date, end_date):
         print(f'[INFO] PDF file: {file_pdf} --> {os.path.exists(file_pdf)}')
         print(f'[INFO] Owncloud info: {owncloud_info}')
         if os.path.exists(file_pdf) and owncloud_info is not None:
+            import owncloud
             session = owncloud.Client(owncloud_info['owncloud_client'])
             session.login(owncloud_info['owncloud_user'], owncloud_info['owncloud_password'])
             session.put_file(f'/ESA-HYP-POP/LastQC_Reports/{site}_LastQC.pdf', file_pdf)
@@ -213,15 +219,26 @@ def create_daily_mail_file(file_qc_mail, site, start_date, daily_sequences_summa
             add_new_line(fout, f'Valid sequences after quality control: {daily_sequences_summary["VALID"]}')
         add_new_line(fout, '')
 
+
+
+
+    add_new_line(fout, 'SYSTEM STATUS')
+    add_new_line(fout, '=============')
+
+    ##disk usage
     file_log_disk_usage = extra_info['file_log_disk_usage']
-    file_log_last_sequence = extra_info['file_log_last_sequence']
-    if os.path.exists(file_log_disk_usage) or os.path.exists(file_log_last_sequence):
-        add_new_line(fout, 'SYSTEM STATUS')
-        add_new_line(fout, '=============')
+    if file_log_disk_usage is not None:
         lines_disk_usage = get_lines_disk_usage(file_log_disk_usage)
         for line in lines_disk_usage:
-            add_new_line(fout, line)
+             add_new_line(fout, line)
 
+    ##last log sequence
+    file_log_last_sequence = extra_info['file_log_last_sequence']  ##None, not implemented
+    if file_log_last_sequence is not None:
+        ##no implemented
+        pass
+
+    add_new_line(fout,'')
     add_new_line(fout, 'DAILY CHECKING FILES')
     add_new_line(fout, '====================')
     add_new_line(fout, f'Ouput folder: {extra_info["folder_day"]}')
@@ -243,15 +260,15 @@ def get_lines_disk_usage(file_log):
     lines.append('DISK USAGE')
     lines.append('----------')
     last_line = df.iloc[-1]
-    used = float(last_line[1]) / (1024 * 1024)
-    av = float(last_line[2]) / (1024 * 1024)
-    lines.append(f' Last measurement: {last_line[0]} Used: {used:.2f} Gb. Available: {av:.2f} Gb. %Use: {last_line[4]}')
+    used = float(last_line.iloc[1]) / (1024 * 1024)
+    av = float(last_line.iloc[2]) / (1024 * 1024)
+    lines.append(f' Last measurement: {last_line.iloc[0]} Used: {used:.2f} Gb. Available: {av:.2f} Gb. %Use: {last_line.iloc[4]}')
 
-    porc_ref = float(str(last_line[4])[:-1])
+    porc_ref = float(str(last_line.iloc[4])[:-1])
 
     nlines = len(df.index)
     last_five_dates = {}
-    date_ref = dt.strptime(last_line[0][:15], '%Y-%m-%d-%H%M').replace(hour=12, minute=0, second=12)
+    date_ref = dt.strptime(last_line.iloc[0][:15], '%Y-%m-%d-%H%M').replace(hour=12, minute=0, second=12)
     date_ref_str_loop = date_ref.strftime('%Y-%m-%d')
     for i in range(5):
         date_ref = date_ref - timedelta(hours=24)
@@ -266,8 +283,8 @@ def get_lines_disk_usage(file_log):
 
     for idx in range(nlines - 1, 0, -1):
         line_here = df.loc[idx]
-        if pd.isna(line_here[0]):continue
-        date_here_str = str(line_here[0])[:10]
+        if pd.isna(line_here.iloc[0]):continue
+        date_here_str = str(line_here.iloc[0])[:10]
 
 
         if date_here_str != date_ref_str_loop:
@@ -277,15 +294,15 @@ def get_lines_disk_usage(file_log):
             if date_here_str_basic in last_five_dates.keys():
                 last_five_dates[date_here_str_basic] = line_here
             if last_date_here_str is None:
-                last_date_here_str = str(line_here[0])
+                last_date_here_str = str(line_here.iloc[0])
 
-            porc_here = float(str(line_here[4])[:-1])
+            porc_here = float(str(line_here.iloc[4])[:-1])
             if abs(porc_ref - porc_here) < 2:
                 porc_ref = porc_here
-                used_array.append(float(line_here[1]))
-                total_array.append(float(line_here[1]) + float(line_here[2]))
-                porc_use_array.append(line_here[4])
-                first_date_here_str = str(line_here[0])
+                used_array.append(float(line_here.iloc[1]))
+                total_array.append(float(line_here.iloc[1]) + float(line_here.iloc[2]))
+                porc_use_array.append(line_here.iloc[4])
+                first_date_here_str = str(line_here.iloc[0])
             else:
                 break
 
@@ -320,9 +337,9 @@ def get_lines_disk_usage(file_log):
         if line_here is None:
             lines.append(f'  {last_five_date}: Data are not available')
         else:
-            used = float(line_here[1]) / (1024 * 1024)
-            av = float(line_here[2]) / (1024 * 1024)
-            lines.append(f'  {line_here[0]} Used: {used:.2f} Gb. Available: {av:.2f} Gb. %Use: {line_here[4]}')
+            used = float(line_here.iloc[1]) / (1024 * 1024)
+            av = float(line_here.iloc[2]) / (1024 * 1024)
+            lines.append(f'  {line_here.iloc[0]} Used: {used:.2f} Gb. Available: {av:.2f} Gb. %Use: {line_here.iloc[4]}')
     lines.append('')
 
     return lines
@@ -957,16 +974,7 @@ def make_single_sun(site, sequence, output_path):
 
 
 def do_test():
-    dir_base = '/mnt/c/DATA_LUIS/INSITU_HYPSTAR/VEIT/2024/07/31'
-    for name in os.listdir(dir_base):
-        seq_folder = os.path.join(dir_base, name)
-        seq_img = os.path.join(seq_folder, 'image')
-        os.mkdir(seq_img)
-        for nimg in os.listdir(seq_folder):
-            if nimg.endswith('jpg'):
-                forig = os.path.join(seq_folder, nimg)
-                fdest = os.path.join(seq_img, nimg)
-                os.rename(forig, fdest)
+    ##for launching test
     return True
 
 

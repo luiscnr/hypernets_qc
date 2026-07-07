@@ -134,7 +134,7 @@ def make_report_files(input_path, output_path, site, start_date, end_date):
             else:
                 daily_sequences_summary = plot_from_options(hdayfile, config_file_summary, dir_img_summary,
                                                             sequences_no_data, False)
-                hdayfile.save_report_summary_image(site, work_date, dir_img_summary, daily_sequences_summary, input_path)
+                hdayfile.save_report_summary_image(site, work_date, dir_img_summary, daily_sequences_summary,input_path)
 
         delete = False if args.nodelfiles else True
         for seq in sequences_all:

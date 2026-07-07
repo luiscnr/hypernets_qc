@@ -1,5 +1,7 @@
 import os
 from datetime import datetime as dt
+from datetime import timezone
+
 from netCDF4 import Dataset
 import matplotlib.pyplot as plt
 import numpy as np
@@ -7,12 +9,18 @@ from plot_multiple import PlotMultiple
 from flag_manager import Flags
 from plot_options import PlotOptions
 from plot_spectra import PlotSpectra
+import pandas as pd
+import seaborn as sns
+from netCDF4 import default_fillvals
+import matplotlib.image as mpimg
+import matplotlib as mpl
+import common_functions as cf
 
 # import sys
 # code_home = os.path.dirname(os.path.dirname(__init__.__file__))
 # sys.path.append(code_home)
 
-class HYPERNETS_DAY_FILE_LAND():
+class HYPERNETS_DAY_FILE_LAND:
 
     def __init__(self, file_nc, path_images):
         self.VALID = True
@@ -26,6 +34,7 @@ class HYPERNETS_DAY_FILE_LAND():
             self.path_images = os.path.dirname(self.file_nc)
         self.path_images_date = None
         self.sequences = []
+        self.sequences_folders = []
         self.format_img = '.png'
         if self.VALID:
             self.sequences = self.get_sequences()
@@ -46,7 +55,7 @@ class HYPERNETS_DAY_FILE_LAND():
             'bad_pointing_threshold_azimuth': 3,
             'plot_polar_min': 0,
             'plot_polar_max': 0.8,
-            'legendfontsiz- {site}e': 8,
+            'legendfontsize': 8,
             'fontsize': 14,
             'ylim_irradiance': None,
             'ylim_reflectance': None,
@@ -54,8 +63,6 @@ class HYPERNETS_DAY_FILE_LAND():
         }
 
     def get_sequences(self):
-        from netCDF4 import Dataset
-        import numpy as np
         sequences = []
         dataset = Dataset(self.file_nc)
         seq_var = dataset.variables['sequence_ref']
@@ -64,7 +71,7 @@ class HYPERNETS_DAY_FILE_LAND():
             if np.ma.is_masked(val):
                 sequences.append(None)
                 continue
-            time = dt.utcfromtimestamp(float(val))
+            time = dt.fromtimestamp(float(val)).astimezone(timezone.utc)
             sequences.append(time.strftime('%Y%m%dT%H%M'))
         dataset.close()
         return sequences
@@ -74,10 +81,17 @@ class HYPERNETS_DAY_FILE_LAND():
                                    date_here.strftime('%d'))
         if os.path.exists(folder_date):
             self.path_images_date = folder_date
+            self.sequences_folders = ['']*len(self.sequences)
+            for name in os.listdir(self.path_images_date):
+                if name.startswith('SEQ'):
+                    ref = name[3:-2]
+                    if ref in self.sequences:
+                        self.sequences_folders[self.sequences.index(ref)] = os.path.join(self.path_images_date,name)
         else:
             self.path_images_date = None
 
     def save_report_image(self, site, delete_images, overwrite):
+
         print(f'[INFO] Sequence {self.isequence}: SEQ{self.sequences[self.isequence]}')
         if self.sequences[self.isequence] is None:
             return
@@ -130,10 +144,9 @@ class HYPERNETS_DAY_FILE_LAND():
         #     os.rmdir(dir_img)
 
     def get_flags_sequence(self):
-        from netCDF4 import Dataset
-        import numpy as np
         dataset = Dataset(self.file_nc)
         flag_value_series = np.uint64(dataset.variables['l2_quality_flag'][self.isequence])
+        flag_value_series = flag_value_series.compressed()##make sure use non-masked values
         all_flag_values = [np.uint64(x) for x in dataset.variables['l2_quality_flag'].flag_masks.split(',')]
         all_flag_meaninigs = dataset.variables['l2_quality_flag'].flag_meanings
         cflags = Flags(all_flag_values, all_flag_meaninigs)
@@ -163,7 +176,6 @@ class HYPERNETS_DAY_FILE_LAND():
         dir_img = os.path.join(os.path.dirname(self.file_nc), 'IMG')
         if not os.path.exists(dir_img):
             os.mkdir(dir_img)
-        from netCDF4 import Dataset
         dataset = Dataset(self.file_nc)
         vza = np.round(dataset.variables['l2_viewing_zenith_angle'][0, :])
         vaa = np.round(dataset.variables['l2_viewing_azimuth_angle'][0, :])
@@ -231,20 +243,22 @@ class HYPERNETS_DAY_FILE_LAND():
         pm_middle.close_plot()
 
     def plot_irradiance_impl(self, file_out, series_id):
-        from netCDF4 import Dataset
         dataset = Dataset(self.file_nc)
         irradiance = dataset.variables['l1_irradiance'][self.isequence]
         xdata = dataset.variables['wavelength'][:]
 
         ##if series_id is None, plot first and last spectra
         if series_id is None:
-            series_id = [0, irradiance.shape[0] - 1]
+            indices_valid = np.where(np.ma.count(irradiance, axis=1) == irradiance.shape[1])[0]
+            index_min = int(np.min(indices_valid))
+            index_max = int(np.max(indices_valid))
+            series_id = [index_min, index_max]
         labels = None
         if len(series_id) > 1:
             labels = []
             times = dataset.variables['l2_acquisition_time'][self.isequence]
             for id in series_id:
-                time_here = dt.utcfromtimestamp(times[id])
+                time_here = dt.fromtimestamp(times[id]).astimezone(timezone.utc)
                 labels.append(time_here.strftime('%Y-%m-%d %H:%M:%S'))
         fig1, ax1 = plt.subplots(figsize=(10, 5))
         if labels is None:
@@ -254,6 +268,7 @@ class HYPERNETS_DAY_FILE_LAND():
             ydata = irradiance[series_id, :]
             for idx in range(len(series_id)):
                 ax1.plot(xdata, ydata[idx], label=labels[idx], alpha=0.3)
+            #print(self.context)
             ax1.legend(fontsize=self.context['legendfontsize'])
         ax1.set_xlabel("Wavelength (nm)", fontsize=self.context['fontsize'])
         ax1.set_ylabel(r"Irradiance ($mW\ nm^{-1}\ m^{-2}$)", fontsize=self.context['fontsize'])
@@ -269,21 +284,30 @@ class HYPERNETS_DAY_FILE_LAND():
         dataset.close()
 
     def plot_reflectance_impl(self, file_out, series_id, type_labels, title):
-        from netCDF4 import Dataset
         dataset = Dataset(self.file_nc)
         reflectance = dataset.variables['l2_reflectance'][self.isequence]
+        indices_valid = np.where(np.ma.count(reflectance, axis=1) == reflectance.shape[1])[0]
+        index_min = int(np.min(indices_valid))
+        index_max = int(np.max(indices_valid))
         xdata = dataset.variables['wavelength'][:]
         labels = None
         if len(series_id) > 1 and type_labels is not None:
             # to implement
             labels = []
+        if series_id[0]<index_min:
+            print(f'[WARNING] {series_id[0]} is not an available series, using  {index_min} instead')
+            series_id = [index_min]
+        if series_id[0]>index_max:
+            print(f'[WARNING] {series_id[0]} is not an available series, using  {index_max} instead')
+            series_id = [index_max]
+
         if title is not None and title == 'DEFAULT':
             if labels is None:  ##len(series_id)==1, only one series
                 iseries = series_id[0]
                 vza = np.round(dataset.variables['l2_viewing_zenith_angle'][self.isequence, iseries])
                 vaa = np.round(dataset.variables['l2_viewing_azimuth_angle'][self.isequence, iseries])
                 time = dataset.variables['l2_acquisition_time'][self.isequence, iseries]
-                time_here = dt.utcfromtimestamp(time)
+                time_here = dt.fromtimestamp(time).astimezone(timezone.utc)
                 title = f'{time_here.strftime("%Y-%m-%d %H:%M:%S")}(vza={vza:.0f},vaa={vaa:.0f})'
         dataset.close()
         # fig1, ax1 = plt.subplots(figsize=(10, 5))
@@ -326,7 +350,6 @@ class HYPERNETS_DAY_FILE_LAND():
         plt.close(fig1)
 
     def plot_polar_files_impl(self, file_out, ax):
-        from netCDF4 import Dataset
         dataset = Dataset(self.file_nc)
         saa = np.mean(dataset.variables['l2_solar_azimuth_angle'][self.isequence, :] % 360)
         sza = np.mean(dataset.variables['l2_solar_zenith_angle'][self.isequence, :])
@@ -406,7 +429,6 @@ class HYPERNETS_DAY_FILE_LAND():
         index_col = 0
         for flag in self.flags_rgb:
             file_img, title = self.get_img_file(flag)
-
             if index_col == ncol:
                 index_col = 0
                 index_row = index_row + 1
@@ -424,8 +446,6 @@ class HYPERNETS_DAY_FILE_LAND():
             pm.close_plot()
 
     def get_img_file(self, flag):
-        from netCDF4 import Dataset
-        import numpy as np
         if flag.startswith('pictures_'):
             name_var = flag
         else:
@@ -438,15 +458,22 @@ class HYPERNETS_DAY_FILE_LAND():
         prefix = var.prefix
         suffix = var.suffix
         seq_here = self.sequences[self.isequence]
+        path_base = self.path_images_date
+        if self.isequence<len(self.sequences_folders) and self.path_images_date is not None:
+            path_base = os.path.join(self.sequences_folders[self.isequence], 'image')
+            if not os.path.isdir(path_base):
+                path_base = None
 
         val = var[self.isequence]
+
         file_img = None
         if not np.ma.is_masked(val):
-            time = dt.utcfromtimestamp(float(val))
+            time = dt.fromtimestamp(float(val)).astimezone(timezone.utc)
             time_str = time.strftime('%Y%m%dT%H%M')
             name_file_img = f'{prefix}_{seq_here}_{time_str}_{suffix}'
-            if self.path_images_date is not None:
-                file_img = os.path.join(self.path_images_date, name_file_img)
+
+            if path_base is not None:
+                file_img = os.path.join(path_base, name_file_img)
                 if not os.path.exists(file_img):
                     file_img = None
 
@@ -477,18 +504,12 @@ class HYPERNETS_DAY_FILE_LAND():
         return None
 
     def plot_sequence_plot_from_options(self, options_figure):
-        from netCDF4 import Dataset
-        import numpy as np
-        import pytz
-        import pandas as pd
-        import seaborn as sns
-        from matplotlib import pyplot as plt
         dataset = Dataset(self.file_nc)
         time_array = dataset.variables['l2_acquisition_time'][:]
         time_array = np.ma.masked_values(time_array, 0)  ##solving a problem find 0n 30/05/2023, it shouln't be happen
 
-        start_time_real = dt.utcfromtimestamp(np.min(time_array[:]))
-        end_time_real = dt.utcfromtimestamp(np.max(time_array[:]))
+        start_time_real = dt.fromtimestamp(np.min(time_array[:])).astimezone(timezone.utc)
+        end_time_real = dt.fromtimestamp(np.max(time_array[:])).astimezone(timezone.utc)
         if start_time_real.strftime('%Y%m%d') != end_time_real.strftime('%Y%m%d'):
             dataset.close()
             print('[ERROR] Plot is only created for a single day')
@@ -513,7 +534,7 @@ class HYPERNETS_DAY_FILE_LAND():
         ntime = len(time_fix_axis)
         time_fix_min_max = np.zeros((ntime, 2))
         seconds_ref = self.get_time_interval_seconds(options_figure['frequency'], 'minutes')
-        time_fix_axis_ts = np.array([x.replace(tzinfo=pytz.utc).timestamp() for x in time_fix_axis]).astype(np.float64)
+        time_fix_axis_ts = np.array([x.replace(tzinfo=timezone.utc).timestamp() for x in time_fix_axis]).astype(np.float64)
         time_fix_min_max[:, 0] = time_fix_axis_ts - seconds_ref
         time_fix_min_max[:, 1] = time_fix_axis_ts + seconds_ref
         time_ticks = []
@@ -528,8 +549,6 @@ class HYPERNETS_DAY_FILE_LAND():
         series_ticks = []
         for idx in range(nseries):
             series_ticks.append(f'{vza[idx]:.0f},{vaa[idx]:.0f}')
-
-
 
         daily_summary_sequences = {
             'NTotal': 0,
@@ -548,7 +567,7 @@ class HYPERNETS_DAY_FILE_LAND():
             }
 
         data = pd.DataFrame(index=series_ticks, columns=time_ticks).astype(np.float64)
-        # data[:] = 0
+
         for itime in range(ntime):
             htick = time_fix_axis[itime].strftime('%H')
             mtick = time_fix_axis[itime].strftime('%M')
@@ -567,7 +586,8 @@ class HYPERNETS_DAY_FILE_LAND():
                         index_flag = flag_values.index(int(fvalue))
                         # flag_meaning = legend_values[index_flag]
                         # daily_summary_sequences[flag_meaning]['nseries'] = daily_summary_sequences[flag_meaning]['nseries']+1
-                        data.loc[series_ticks[iseries]].at[time_tick] = index_flag + 1
+                        #data.loc[series_ticks[iseries]].at[time_tick] = index_flag + 1
+                        data.loc[series_ticks[iseries],time_tick] = fvalue
                     except:
                         pass
 
@@ -585,18 +605,15 @@ class HYPERNETS_DAY_FILE_LAND():
         if self.sequences_no_data is not None and len(self.sequences_no_data) > 0:
             daily_summary_sequences['NTotal'] = daily_summary_sequences['NAvailable'] + len(self.sequences_no_data)
             for seq in self.sequences_no_data:
-                time_stamp_seq = dt.strptime(seq[3:], '%Y%m%dT%H%M').replace(tzinfo=pytz.utc).timestamp()
+                time_stamp_seq = dt.strptime(seq[3:], '%Y%m%dT%H%M').replace(tzinfo=timezone.utc).timestamp()
                 iwhere = np.where(
                     np.logical_and(time_stamp_seq >= time_fix_min_max[:, 0], time_stamp_seq < time_fix_min_max[:, 1]))
                 if len(iwhere[0]) > 0:
                     index = iwhere[0][0]
-                    date_seq = dt.utcfromtimestamp(time_fix_axis_ts[index])
+                    date_seq = dt.fromtimestamp(time_fix_axis_ts[index]).astimezone(timezone.utc)
                     data.loc[:, date_seq.strftime('%H:%M')] = 0
         else:
             daily_summary_sequences['NTotal'] = daily_summary_sequences['NAvailable']
-
-        print('---------------->',len(data.index))
-        print(data.columns)
 
         plt.Figure()
         if options_figure['color'] is not None:
@@ -716,10 +733,6 @@ class HYPERNETS_DAY_FILE_LAND():
         dataset.close()
 
     def plot_time_series_from_options(self, options_figure):
-        from netCDF4 import Dataset
-        import numpy as np
-        import pytz
-
         dataset = Dataset(self.file_nc)
         time_var = options_figure['time_var']
         avg_vars = options_figure['avg_var']
@@ -765,8 +778,8 @@ class HYPERNETS_DAY_FILE_LAND():
         if options_figure['legend_values'] is not None and len(options_figure['legend_values']) == ngroups:
             str_legend = options_figure['legend_values']
 
-        start_time_real = dt.utcfromtimestamp(np.min(time_array[time_array != -999.0]))
-        end_time_real = dt.utcfromtimestamp(np.max(time_array[time_array != -999.0]))
+        start_time_real = dt.fromtimestamp(np.min(time_array[time_array != -999.0])).astimezone(timezone.utc)
+        end_time_real = dt.fromtimestamp(np.max(time_array[time_array != -999.0])).astimezone(timezone.utc)
 
 
 
@@ -777,7 +790,7 @@ class HYPERNETS_DAY_FILE_LAND():
             ntime = len(time_fix_axis)
             time_fix_min_max = np.zeros((ntime, 2))
             seconds_ref = self.get_time_interval_seconds(options_figure['frequency'], options_figure['frequency_units'])
-            time_fix_axis_ts = np.array([x.replace(tzinfo=pytz.utc).timestamp() for x in time_fix_axis]).astype(
+            time_fix_axis_ts = np.array([x.replace(tzinfo=timezone.utc).timestamp() for x in time_fix_axis]).astype(
                 np.float64)
             time_fix_min_max[:, 0] = time_fix_axis_ts - seconds_ref
             time_fix_min_max[:, 1] = time_fix_axis_ts + seconds_ref
@@ -868,8 +881,6 @@ class HYPERNETS_DAY_FILE_LAND():
 
 
     def plot_angle_plot_from_options(self, options_figure):
-        from netCDF4 import Dataset
-        import numpy as np
         options_figure = self.check_gs_options_impl(options_figure, 'groupBy', 'groupType', 'groupValues')
         dataset = Dataset(self.file_nc)
         if options_figure['angle_var'] not in dataset.variables:
@@ -934,8 +945,7 @@ class HYPERNETS_DAY_FILE_LAND():
             if ngroups > 1 and groupArray is not None:
                 colors = options_figure['color']
                 if len(colors) != ngroups:
-                    import MDB_reader.MDBPlotDefaults as pdefaults
-                    colors = pdefaults.get_color_list(ngroups)
+                    colors = cf.get_color_list(ngroups)
                 point_size = options_figure['point_size']
                 point_marker = options_figure['point_marker']
                 if len(point_size) != ngroups:
@@ -977,8 +987,6 @@ class HYPERNETS_DAY_FILE_LAND():
         dataset.close()
 
     def plot_spectra_plot_from_options(self, options_figure):
-        from netCDF4 import Dataset
-        import numpy as np
         plot_spectra = True
         if options_figure['plot_spectra'][0].lower() == 'none':
             plot_spectra = False
@@ -999,7 +1007,6 @@ class HYPERNETS_DAY_FILE_LAND():
         if '_FillValue' in var_y.ncattrs():
             fill_value = var_y._FillValue
         else:
-            from netCDF4 import default_fillvals
             fill_value = default_fillvals[var_y.dtype.str[1:]]
 
         iseries = options_figure['iseriesref']
@@ -1202,8 +1209,6 @@ class HYPERNETS_DAY_FILE_LAND():
         pm.close_plot()
 
         ##remove blank space
-        import matplotlib.image as mpimg
-        import numpy as np
         image = mpimg.imread(file_out)
         image_new = np.concatenate([image[0:901, :, :], image[1200:image.shape[0], :, :]])
         height, width, nbands = image_new.shape
@@ -1228,7 +1233,6 @@ class HYPERNETS_DAY_FILE_LAND():
         if nvalues < 6:
             index = value - min
             return colors_default[index]
-        import matplotlib as mpl
         cm = mpl.colormaps['jet']
         return cm((value - min) / (max - min))
 
@@ -1294,14 +1298,11 @@ class HYPERNETS_DAY_FILE_LAND():
                                                                                options_figure['groupType'])
             if 'color' in options_figure.keys():
                 if len(options_figure['color']) != ngroup:
-                    import MDB_reader.MDBPlotDefaults as default
-                    options_figure['color'] = default.get_color_list(ngroup)
+                    options_figure['color'] = cf.get_color_list(ngroup)
 
         return ngroup, groupValues, groupArray, str_legend
 
     def get_gs_array(self, options_figure, by, type):
-        from netCDF4 import Dataset
-        import numpy as np
         dataset = Dataset(self.file_nc)
         if type == 'float':
             array_flag = np.array(dataset.variables[by])
@@ -1361,7 +1362,6 @@ class HYPERNETS_DAY_FILE_LAND():
         return str_legend
 
     def get_flag_list(self, values, allValues, allFlags):
-        import numpy as np
         flag_list = []
         for val in values:
             if val == -1:
@@ -1389,8 +1389,6 @@ class HYPERNETS_DAY_FILE_LAND():
         return interval
 
     def check_gs_options_impl(self, options_figure, by, type, values):
-        from netCDF4 import Dataset
-        import numpy as np
         var_group_name = options_figure[by]
         if var_group_name is None:
             return options_figure

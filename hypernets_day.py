@@ -1,11 +1,14 @@
 from datetime import datetime as dt
 from datetime import timedelta
-import os, subprocess, pytz, configparser
+from datetime import timezone
+import os, subprocess, configparser
 from netCDF4 import Dataset
+import numpy as np
 from plot_multiple import PlotMultiple
 from hypernets_day_file import HYPERNETS_DAY_FILE
 from hypernets_day_file_land import HYPERNETS_DAY_FILE_LAND
 
+import common_functions as cf
 
 class HYPERNETS_DAY:
 
@@ -275,7 +278,6 @@ class HYPERNETS_DAY:
 
         for seq in list_sequences:
             print(f'[INFO] Checking sun picture in sequence: {seq}')
-            # seq_time =  dt.strptime(seq[3:], '%Y%m%dT%H%M%S').replace(tzinfo=pytz.UTC)
             files_sun = self.get_sun_image_sequence(site, date_folder_raw, seq)
 
             if len(files_sun) == 1:
@@ -304,7 +306,7 @@ class HYPERNETS_DAY:
             picture = '090'
         date_img = dt.fromtimestamp(os.path.getmtime(file_img))
         date_img_str = date_img.strftime('%Y%m%dT%H%M')
-        name_new = f'HYPTERNETS_{type}_{site}_IMG_{seq[3:-2]}_{date_img_str}_{picture}_0_0_v2.0.jpg'
+        name_new = f'HYPERNETS_{type}_{site}_IMG_{seq[3:-2]}_{date_img_str}_{picture}_0_0_v2.0.jpg'
         return name_new
 
     def get_sequences_info(self, site, date_here, sequences_with_data, sequences_abs_range):
@@ -317,7 +319,7 @@ class HYPERNETS_DAY:
             all_sequences_orig = all_sequences.copy()
             all_sequences = []
             for seq in all_sequences_orig:
-                date_here = dt.strptime(seq[3:], '%Y%m%dT%H%M').replace(tzinfo=pytz.utc).timestamp()
+                date_here = dt.strptime(seq[3:], '%Y%m%dT%H%M').replace(tzinfo=timezone.utc).timestamp()
                 if sequences_abs_range[0] <= date_here <= sequences_abs_range[1]:
                     all_sequences.append(seq)
 
@@ -467,7 +469,7 @@ class HYPERNETS_DAY:
                 nsequences = ((end_time.timestamp() - start_time.timestamp()) / frequency_seconds) + 1
                 if absolute:
                     end_time = end_time + timedelta(minutes=frequency)
-                range = [start_time.replace(tzinfo=pytz.UTC).timestamp(), end_time.replace(tzinfo=pytz.UTC).timestamp(),
+                range = [start_time.replace(tzinfo=timezone.UTC).timestamp(), end_time.replace(tzinfo=timezone.UTC).timestamp(),
                          int(nsequences)]
                 return range
             except:
@@ -659,7 +661,7 @@ class HYPERNETS_DAY:
             if not self.files_dates[seq]['valid']:
                 continue
             index_add = index_add + 1
-            seq_time = dt.strptime(seq, '%Y%m%dT%H%M').replace(tzinfo=pytz.UTC)
+            seq_time = dt.strptime(seq, '%Y%m%dT%H%M').replace(tzinfo=timezone.UTC)
             seq_time_stamp = float(seq_time.timestamp())
             self.dataset_w.variables['sequence_ref'][index_add] = seq_time_stamp
 
@@ -816,7 +818,7 @@ class HYPERNETS_DAY:
                 var_name = rgb_variables[ref]['name_var']
                 variable = self.dataset_w.variables[var_name]
 
-                time_here = dt.strptime(name_s[5], '%Y%m%dT%H%M').replace(tzinfo=pytz.UTC)
+                time_here = dt.strptime(name_s[5], '%Y%m%dT%H%M').replace(tzinfo=timezone.UTC)
                 time_stamp = float(time_here.timestamp())
                 variable[index_add] = time_stamp
                 if not rgb_variables[ref]['check_at']:  ##check attributes
@@ -1141,3 +1143,497 @@ class HYPERNETS_DAY:
                 file_here = os.path.join(dir_img, name)
                 os.remove(file_here)
             os.rmdir(dir_img)
+
+
+class HYPERNETS_DAY_BASE:
+    def __init__(self,path_data, path_output):
+        self.path_data = path_data
+        self.path_output = path_output if path_output is not None else self.path_data
+        self.format_img = '.png'
+        self.files_dates = {}
+        self.dataset_w = None
+
+        ##rgb pictures
+        self.rgb_refs = []
+        self.rgb_oza = []
+        self.rgb_oaa = []
+        self.rgb_pictures_names = []
+
+    def get_input_folder_date(self, site, date_here):
+        return cf.get_path_date(self.path_data, site, date_here, create_dir=False)
+
+    def get_output_folder_date(self, site, date_here):
+        return cf.get_path_date(self.path_output, site, date_here, create_dir=True)
+
+    def get_files_img_for_sequences_no_data(self, site, date_here, seq, use_seq_folders):
+        files_img = {}
+        for name_img, ref in zip(self.rgb_pictures_names, self.rgb_refs):
+            files_img[ref] = {
+                'name_img': name_img,
+                'file_img': None
+            }
+        date_folder = self.get_input_folder_date(site, date_here)
+        if date_folder is None:
+            return None
+
+        if use_seq_folders:
+            for name in os.listdir(date_folder):
+                if name.startswith(seq):
+                    date_folder = os.path.join(date_folder, name, 'image')
+                    break
+
+        seq_ref = seq.replace('SEQ', 'IMG_')
+        for name in os.listdir(date_folder):
+            if name.endswith('.jpg') and name.find(seq_ref) > 0:
+                name_s = name.split('_')
+                ref = name_s[6]
+                if ref not in files_img.keys():
+                    continue
+                files_img[ref]['file_img'] = os.path.join(date_folder, name)
+        return files_img
+
+    def get_sequences_date(self, site, date_here,folder_date=None):
+        list_sequences = []
+        if folder_date is None:
+            folder_date = self.get_input_folder_date(site, date_here)
+        if folder_date is None:
+            return sorted(list_sequences)
+        for name in os.listdir(folder_date):
+            if name.startswith('SEQ') and os.path.isdir(os.path.join(folder_date, name)):
+                list_sequences.append(name)
+        list_sequences.sort()
+        return sorted(list_sequences)
+
+    def get_sequences_info(self, site, date_here, sequences_with_data, sequences_abs_range):
+
+        all_sequences = self.get_sequences_date(site, date_here)
+        all_sequences = [x[:-2] for x in all_sequences]
+
+        if sequences_abs_range is not None:
+            all_sequences_orig = all_sequences.copy()
+            all_sequences = []
+            for seq in all_sequences_orig:
+                date_here = dt.strptime(seq[3:], '%Y%m%dT%H%M').replace(tzinfo=timezone.utc).timestamp()
+                if sequences_abs_range[0] <= date_here <= sequences_abs_range[1]:
+                    all_sequences.append(seq)
+
+        sequences_with_data = [f'SEQ{x}' for x in sequences_with_data]
+
+        sequences_without_data = []
+        all_sequences_info = {}
+        for seq in all_sequences:
+            if seq not in sequences_with_data:
+                sequences_without_data.append(seq)
+                all_sequences_info[seq] = -1
+            else:
+                all_sequences_info[seq] = sequences_with_data.index(seq)
+
+        return sequences_without_data, all_sequences_info
+
+    def get_files_date(self, site, date_here):
+
+        date_folder = self.get_input_folder_date(site, date_here)
+        if date_folder is None:
+            return
+
+        ##list_sequences is obtained from equence folders
+        list_sequences = self.get_sequences_date(site, date_here,folder_date=date_folder)
+
+        if len(list_sequences) == 0:
+            print(f'[WARNING] No sequences found for date: {date_here.strftime("%Y-%m-%d")}')
+            return
+        ##list_seq_refs remove SEQ and the seconds for the sequence folder name
+        list_seq_refs = [x[3:-2] for x in list_sequences]
+        folders_to_check = [os.path.join(date_folder, seq) for seq in list_sequences]
+        folders_to_check_images = [os.path.join(x, 'image') for x in folders_to_check]
+        ##start empty list_files dictionary, using the sequence_refs as keys
+        self.files_dates={x:{'file_l2':None,'file_l1':None,'file_images':None,'valid':False} for x in list_seq_refs}
+
+        ##nc files
+        for folder_to_check in folders_to_check:
+            if not os.path.exists(folder_to_check):
+                print(f'[WARNING] Folder {folder_to_check} does not exist. Skipping...')
+                continue
+            for name in os.listdir(folder_to_check):
+                if name.find('L2A_REF') > 0 and name.endswith('nc'):
+                    sequence_ref = name.split('_')[5]
+                    if sequence_ref in self.files_dates:
+                        self.files_dates[sequence_ref]['file_l2'] = os.path.join(folder_to_check, name)
+                if name.find('L1C_ALL') > 0 and name.endswith('nc'):
+                    sequence_ref = name.split('_')[5]
+                    if sequence_ref in self.files_dates:
+                        self.files_dates[sequence_ref]['file_l1'] = os.path.join(folder_to_check, name)
+
+        ##check pictures
+        for folder_to_check in folders_to_check_images:
+            if not os.path.exists(folder_to_check):
+                print(f'[WARNING] Folder {folder_to_check} does not exist. Skipping...')
+                continue
+            for name in os.listdir(folder_to_check):
+                if name.find('IMG') > 0 and name.endswith('jpg'):
+                    sequence_ref = name.split('_')[4]
+                    if sequence_ref in self.files_dates:
+                        file_images = self.files_dates[sequence_ref]['file_images']
+                        if file_images is None:
+                            file_images = [os.path.join(folder_to_check, name)]
+                        else:
+                            file_images.append(os.path.join(folder_to_check, name))
+                        self.files_dates[sequence_ref]['file_images'] = file_images
+
+        ##a sequence is considered valid if nc files are available
+        for seq in self.files_dates:
+            if self.files_dates[seq]['file_l2'] is not None and self.files_dates[seq]['file_l1'] is not None:
+                self.files_dates[seq]['valid'] = True
+
+    def set_rgb_refs(self, config_file_summary):
+        options_c = cf.ConfigOptions(config_file_summary)
+        res = options_c.get_rgb_refs()
+        if res is not None:
+            if res['rgb_refs'] is not None:
+                self.rgb_refs = res['rgb_refs']
+            if res['rgb_oza'] is not None and res['rgb_oza'] is not None:
+                self.rgb_oza = res['rgb_oza']
+                self.rgb_oaa = res['rgb_oaa']
+            if res['rgb_pictures_names'] is not None:
+                self.rgb_pictures_names = res['rgb_pictures_names']
+
+    def set_rgb_images_data(self):
+        seq_list = list(self.files_dates.keys())
+        seq_list.sort()
+        # self.rgb_refs = ['003', '006', '009', '012', '015', '016']
+        rgb_variables = {
+            self.rgb_refs[0]: {'name_var': f'pictures_{self.rgb_pictures_names[0]}', 'check_at': False},
+            self.rgb_refs[1]: {'name_var': f'pictures_{self.rgb_pictures_names[1]}', 'check_at': False},
+            self.rgb_refs[2]: {'name_var': f'pictures_{self.rgb_pictures_names[2]}', 'check_at': False},
+            self.rgb_refs[3]: {'name_var': f'pictures_{self.rgb_pictures_names[3]}', 'check_at': False},
+            self.rgb_refs[4]: {'name_var': f'pictures_{self.rgb_pictures_names[4]}', 'check_at': False},
+            self.rgb_refs[5]: {'name_var': f'pictures_{self.rgb_pictures_names[5]}', 'check_at': False}
+        }
+        index_add = -1
+        for idx in range(len(seq_list)):
+            seq = seq_list[idx]
+            if not self.files_dates[seq]['valid']:
+                continue
+            index_add = index_add + 1
+            if self.files_dates[seq]['file_images'] is None:
+                continue
+            print(f'[INFO] Saving RGB images for sequence: {seq} [{index_add}]')
+            for file_img in self.files_dates[seq]['file_images']:
+                name = file_img.split('/')[-1]
+                name_s = name.split('_')
+                ref = name_s[6]
+                if ref not in rgb_variables.keys():
+                    continue
+                var_name = rgb_variables[ref]['name_var']
+                variable = self.dataset_w.variables[var_name]
+
+                time_here = dt.strptime(name_s[5], '%Y%m%dT%H%M').replace(tzinfo=timezone.utc)
+                time_stamp = float(time_here.timestamp())
+                variable[index_add] = time_stamp
+                if not rgb_variables[ref]['check_at']:  ##check attributes
+                    variable.oza = int(name_s[7])
+                    variable.oaa = int(name_s[8])
+                    variable.prefix = '_'.join(name_s[0:4])
+                    variable.suffix = '_'.join(name_s[6:])
+                    rgb_variables[ref]['check_at'] = True
+
+    def set_sequence_data(self):
+        print(f'[INFO] Set sequence reference data...')
+
+        seq_list = list(self.files_dates.keys())
+        seq_list.sort()
+        index_add = -1
+        for idx in range(len(seq_list)):
+            seq = seq_list[idx]
+            if not self.files_dates[seq]['valid']:
+                continue
+            index_add = index_add + 1
+            seq_time = dt.strptime(seq, '%Y%m%dT%H%M').replace(tzinfo=timezone.utc)
+            seq_time_stamp = float(seq_time.timestamp())
+            self.dataset_w.variables['sequence_ref'][index_add] = seq_time_stamp
+
+    def set_global_attributtes(self, site, date_here):
+        print(f'[INFO] Set global attributes...')
+        self.dataset_w.n_sequences = len(list(self.files_dates.keys()))
+        self.dataset_w.creation_time = dt.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        if date_here is not None:
+            self.dataset_w.date = date_here.strftime('%Y-%m-%d')
+        if site is not None:
+            self.dataset_w.site = site
+
+    def save_report_image_only_pictures(self, site, delete_images, overwrite, seq, files_img, input_path_report):
+        print(f'[INFO] Sequence {seq} (No Level-2 data available)')
+        seq_time_str = seq[3:]
+        seq_time = dt.strptime(seq_time_str, '%Y%m%dT%H%M')
+        file_out = os.path.join(input_path_report, f'{site}_{seq_time_str}_Report{self.format_img}')
+        if os.path.exists(file_out) and not overwrite:
+            return
+        #names_img = ['sky_irr_1', 'sky_rad_1', 'water_rad', 'sky_rad_2', 'sky_irr_2', 'sun']
+        names_img = self.rgb_pictures_names
+        names_img_files = {}
+        for ref in files_img:
+            name_img = files_img[ref]['name_img']
+            if name_img in names_img:
+                names_img_files[name_img] = files_img[ref]['file_img']
+
+        dir_img = os.path.join(input_path_report, 'IMG')
+        if not os.path.exists(dir_img):
+            os.mkdir(dir_img)
+
+        pm = PlotMultiple()
+        nrow = 2
+        ncol = 3
+        pm.start_multiple_plot_advanced(nrow, ncol, 10, 7.0, 0.02, 0.15, True)
+        index_row = 0
+        index_col = 0
+        for name_img in names_img_files:
+            file_img = names_img_files[name_img]
+            title = name_img
+            if index_col == ncol:
+                index_col = 0
+                index_row = index_row + 1
+
+            if file_img is not None:
+                pm.plot_image_hypernets(file_img, index_row, index_col, title)
+            else:
+                pm.plot_blank_with_title(index_row, index_col, title)
+
+            index_col = index_col + 1
+
+        date_str = seq_time.strftime('%Y-%m-%d')
+        time_str = seq_time.strftime('%H:%M')
+        title = f'{site} {seq_time_str} - {date_str} {time_str} - No L2 Data'
+        pm.fig.suptitle(title)
+        line = f'ANOMALY: ?'
+        pm.fig.text(0.20, 0.05, line)
+        pm.save_fig(file_out)
+        pm.close_plot()
+
+        if delete_images:
+            for name in os.listdir(dir_img):
+                file_here = os.path.join(dir_img, name)
+                os.remove(file_here)
+            os.rmdir(dir_img)
+
+class HYPERNETS_DAY_LAND(HYPERNETS_DAY_BASE):
+    def __init__(self, path_data, path_output):
+        super().__init__(path_data, path_output)
+
+        ##default pictures
+        self.rgb_refs = ['007', '035', '058', '004', '066', '067']
+        self.rgb_oza = [30, 0, 330, 180, 180, 0]
+        self.rgb_oaa = [293, 278, 293, 278, 278, 0]
+        self.rgb_pictures_names = ['target_rad1','target_rad2','target_rad3','sky_irr1','sky_irr2','sun']
+
+    def get_daily_file_date(self, site, date_here):
+        folder_date = self.get_output_folder_date(site, date_here)
+        if folder_date is None:
+            return None
+        date_here_str = date_here.strftime('%Y%m%d')
+        file_date = os.path.join(folder_date, f'HYPERNETS_L_DAY_{date_here_str}.nc')
+
+        return file_date
+
+    def get_disk_usage_log_file(self, site):
+        file_log = os.path.join(self.path_data, site, f'disk-usage_{site}.log')
+        if os.path.exists(file_log):
+            return file_log
+        else:
+            return None
+
+    def get_hypernets_day_file(self, site, date_here):
+
+        file_date = self.get_daily_file_date(site, date_here)
+        if file_date is None:
+            return None
+        if os.path.exists(file_date):
+            return HYPERNETS_DAY_FILE_LAND(file_date, self.path_data)
+        else:
+            print(f'[WARNING] Expected HYPERNETS day file {file_date} does not exist')
+            return None
+
+
+    def check_dimensions(self, seq):
+        file_l1 = self.files_dates[seq]['file_l1']
+        if file_l1 is None or self.files_dates[seq]['file_l2'] is None:
+            return None
+        dataset = Dataset(file_l1)
+        dim_out = {
+            'wavelength': dataset.dimensions['wavelength'].size,
+            'series': dataset.dimensions['series'].size
+        }
+        dataset.close()
+
+        return dim_out
+
+    def start_file_date(self, site, date_here, overwrite):
+        file_date = self.get_daily_file_date(site, date_here)
+        if file_date is None:
+            print(f'[WARNING] Date folder for {site} and {date_here} is not available. Skipping...')
+            return -999
+        if os.path.exists(file_date) and not overwrite:
+            print(f'[WARNING] File: {file_date} already exists. Skipping...')
+            return -100
+        if len(self.files_dates) == 0:
+            print(f'[WARNING] Dates are not available for this date. Skipping...')
+            return -1
+
+        seq_list = list(self.files_dates.keys())
+        seq_list.sort()
+        index_seq_ref = -1
+        n_wavelengths = []
+        n_series = []
+        nseq_valid = 0
+
+        for iseq in range(len(seq_list)):
+            seq = seq_list[iseq]
+            dims_here = self.check_dimensions(seq)
+            if dims_here is not None:
+                if dims_here['wavelength'] not in n_wavelengths:
+                    n_wavelengths.append(dims_here['wavelength'])
+                if dims_here['series'] not in n_series:
+                    n_series.append(dims_here['series'])
+                index_seq_ref = iseq
+                nseq_valid = nseq_valid + 1
+            else:
+                self.files_dates[seq]['valid'] = False
+
+        if len(n_series) == 0:
+            print(f'[WARNING] L1 files are not available for this date. Skipping...')
+            return -2
+
+        if len(n_wavelengths)>1:
+            print(f'[WARNING] Discrepancy in the number of wavelengths in the L1 files: {n_wavelengths}. Skipping...')
+            return -3
+        n_series_end = int(np.max(n_series))
+        if len(n_series)>1:
+            print(f'[WARNING] Discrepancy in the number of series in the L1 files: {n_series}. Using the maximum number {n_series_end}')
+
+
+
+
+        try:
+            self.dataset_w = Dataset(file_date, 'w')
+        except Exception as ex:
+            print(f'[WARNING] File {file_date} can not be created. Please check folder permissions. Exception: {ex}')
+            return -4
+
+        ##dimensions
+        print(f'[INFO] Creating dimensions...')
+        self.dataset_w.createDimension('sequence')
+        self.dataset_w.createDimension('series', n_series_end)
+        self.dataset_w.createDimension('wavelength', n_wavelengths[0])
+
+        rgb_variables = {}
+        for idx in range(6):
+            rgb_variables[f'pictures_{self.rgb_pictures_names[idx]}'] = {
+                'ref': self.rgb_refs[idx],
+                'oza': self.rgb_oza[idx],
+                'oaa': self.rgb_oaa[idx],
+                'prefix': f'HYPERNETS_L_{site}_IMG',
+                'suffix': f'{self.rgb_refs[idx]}_{self.rgb_oza[idx]}_{self.rgb_oaa[idx]}_v2_0.jpg'
+            }
+        for rgb_var in rgb_variables:
+            var = self.dataset_w.createVariable(rgb_var, 'f8', ('sequence',), zlib=True, complevel=6)
+            for at in rgb_variables[rgb_var]:
+                var.setncattr(at, rgb_variables[rgb_var][at])
+
+        ##level1 and level 2 variables
+        print(f'[INFO] Creating level 1 variables...')
+        self.create_variables(1, seq_list[index_seq_ref])
+        print(f'[INFO] Creating level 2 variables...')
+        self.create_variables(2, seq_list[index_seq_ref])
+        #
+        ##var sequence time
+        self.dataset_w.createVariable('sequence_ref', 'f8', ('sequence',), zlib=True, complevel=6)
+
+        return nseq_valid
+
+    def create_variables(self, level, seq):
+
+        if level == 1:
+            file = self.files_dates[seq]['file_l1']
+            prename = 'l1'
+        elif level == 2:
+            file = self.files_dates[seq]['file_l2']
+            prename = 'l2'
+        dataset = Dataset(file)
+        for var_name in dataset.variables:
+            if var_name.startswith('u_rel') or var_name.startswith('err'):
+                continue
+            if var_name == 'wavelength' or var_name == 'bandwidth':
+                if level == 1:
+                    continue
+                elif level == 2:
+                    var_name_new = var_name
+            else:
+                var_name_new = f'{prename}_{var_name}'
+            dimensions = dataset.variables[var_name].dimensions
+            if len(dimensions) == 1 and dimensions[0] == 'series':
+                dimensions = tuple(['sequence'] + list(dimensions))
+            if len(dimensions) == 2 and dimensions[0] == 'wavelength' and dimensions[1] == 'series':
+                dimensions = ('sequence', 'series', 'wavelength')
+
+            fillValue = None
+            if '_FillValue' in dataset.variables[var_name].ncattrs():
+                fillValue = dataset.variables[var_name]._FillValue
+
+            var_new = self.dataset_w.createVariable(var_name_new, dataset.variables[var_name].datatype, dimensions,
+                                                    zlib=True, complevel=6, fill_value=fillValue)
+            for at in dataset.variables[var_name].ncattrs():
+                if at == '_FillValue':
+                    continue
+                var_new.setncattr(at, dataset.variables[var_name].getncattr(at))
+            if (var_name == 'wavelength' or var_name == 'bandwidth') and level == 2:
+                var_new[:] = dataset.variables[var_name][:]
+        dataset.close()
+
+    def set_data(self, site, date_here):
+        self.set_netcdf_data(1)
+        self.set_netcdf_data(2)
+        self.set_rgb_images_data()
+        self.set_sequence_data()
+        self.set_global_attributtes(site, date_here)
+
+    def set_netcdf_data(self, level):
+
+        seq_list = list(self.files_dates.keys())
+        seq_list.sort()
+        index_add = -1
+        for idx in range(len(seq_list)):
+            seq = seq_list[idx]
+            if not self.files_dates[seq]['valid']:
+                continue
+            if level == 1:
+                file = self.files_dates[seq]['file_l1']
+                prename = 'l1'
+            if level == 2:
+                file = self.files_dates[seq]['file_l2']
+                prename = 'l2'
+
+            index_add = index_add + 1
+            print(f'[INFO] Set level{level} data for sequence {seq} [{index_add}]')
+            dataset = Dataset(file)
+            for var_name in dataset.variables:
+                if var_name.startswith('u_rel') or var_name.startswith('err'):
+                    continue
+                if var_name == 'wavelength' or var_name == 'bandwidth':
+                    continue
+                var_name_new = f'{prename}_{var_name}'
+                dimensions = self.dataset_w.variables[var_name_new].dimensions
+                ndim = len(dimensions)
+
+                if ndim == 2:
+                    index_series = dataset.variables[var_name].shape[0]
+                    self.dataset_w.variables[var_name_new][index_add, 0:index_series] = dataset.variables[var_name][0:index_series]
+                elif ndim == 3:
+                    index_series = dataset.variables[var_name].shape[1]
+                    self.dataset_w.variables[var_name_new][index_add, 0:index_series, :] = dataset.variables[var_name][:,0:index_series].transpose()
+
+            dataset.close()
+
+
+
+    def close_file_data(self):
+        self.dataset_w.close()
+        print(f'[INFO] Completed')

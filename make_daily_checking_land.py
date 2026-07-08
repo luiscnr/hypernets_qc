@@ -7,10 +7,7 @@ from datetime import timezone
 from hypernets_day import HYPERNETS_DAY_LAND
 
 parser = argparse.ArgumentParser(description="Creation of insitu nc files")
-parser.add_argument('-m', "--mode",
-                    choices=['GETFILES', 'CREATEDAYFILES', 'REPORTDAYFILES', 'SUMMARYFILES', 'NCFROMCSV', 'PLOT',
-                             'SUNDOWNLOAD', 'SUNPLOTS', 'SUNMAIL', 'CORRECTANGLES', 'COPYFROMCSV', 'SINGLESUN'],
-                    required=True)
+parser.add_argument('-m', "--mode",choices=['CREATEDAYFILES', 'REPORTDAYFILES'],required=True)
 parser.add_argument('-sd', "--start_date", help="Start date. Optional with --listdates (YYYY-mm-dd)")
 parser.add_argument('-ed', "--end_date", help="End date. Optional with --listdates (YYYY-mm-dd)")
 parser.add_argument('-st', "--start_time", help="Start time. (HH:MM)")
@@ -41,7 +38,6 @@ def get_config_file(output_path,site,log='WARNING'):
     else:
         print(f'[{log}] Configuration file {config_file_summary} is not available')
         return None
-
 
 def  make_report_files(input_path, output_path, site, start_date, end_date):
     if args.verbose:
@@ -159,9 +155,6 @@ def  make_report_files(input_path, output_path, site, start_date, end_date):
         daily_mail = cf.DailyMail(file_qc_mail)
         daily_mail.create_file(site, start_date, daily_sequences_summary, extra_info)
 
-
-
-
 def make_create_day_files(input_path, output_path, site, start_date, end_date):
     if args.verbose:
         print(f'[INFO] Started creating files')
@@ -201,14 +194,12 @@ def make_create_day_files(input_path, output_path, site, start_date, end_date):
         hday.close_file_data()
         work_date = work_date + timedelta(hours=interval)
 
-
-
 def main():
     print(f'[INFO] Started Daily Checking for land sites!')
     start_date, end_date = cf.get_start_and_end_dates(args)
     if start_date is None:
         return
-    start_time, end_time = cf.get_start_and_end_times(args)
+    #start_time, end_time = cf.get_start_and_end_times(args)
 
     site = 'JSIT'
     if args.site_name:
